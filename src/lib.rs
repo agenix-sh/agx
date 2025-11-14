@@ -34,6 +34,13 @@ pub fn run() -> Result<(), String> {
                         .join(" | ");
 
                     logging::info(&format!("parsed plan steps: {}", commands));
+
+                    let registry = registry::ToolRegistry::new();
+                    let executor = executor::Executor::new();
+
+                    if let Err(error) = executor.execute(&parsed, &input, &registry) {
+                        logging::info(&format!("executor error: {error}"));
+                    }
                 }
                 Err(error) => {
                     logging::info(&format!("plan parse error: {error}"));
