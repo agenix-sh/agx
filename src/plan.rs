@@ -28,9 +28,11 @@ impl WorkflowPlan {
             self.plan = vec![
                 PlanStep {
                     cmd: "sort".to_string(),
+                    args: Vec::new(),
                 },
                 PlanStep {
                     cmd: "uniq".to_string(),
+                    args: Vec::new(),
                 },
             ];
         }
@@ -76,7 +78,10 @@ fn parse_any_form(text: &str) -> Result<WorkflowPlan, serde_json::Error> {
             plan: simple
                 .plan
                 .into_iter()
-                .map(|cmd| PlanStep { cmd })
+                .map(|cmd| PlanStep {
+                    cmd,
+                    args: Vec::new(),
+                })
                 .collect(),
         });
     }
@@ -89,7 +94,10 @@ fn parse_any_form(text: &str) -> Result<WorkflowPlan, serde_json::Error> {
         return Ok(WorkflowPlan {
             plan: cmds
                 .into_iter()
-                .map(|cmd| PlanStep { cmd })
+                .map(|cmd| PlanStep {
+                    cmd,
+                    args: Vec::new(),
+                })
                 .collect(),
         });
     }
