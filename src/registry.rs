@@ -20,6 +20,32 @@ impl ToolRegistry {
     pub fn find_by_id(&self, id: &str) -> Option<&'static Tool> {
         self.tools().iter().find(|tool| tool.id == id)
     }
+
+    pub fn describe_for_planner(&self) -> String {
+        let mut description = String::new();
+
+        for tool in self.tools() {
+            if !description.is_empty() {
+                description.push('\n');
+            }
+
+            description.push_str("- ");
+            description.push_str(tool.id);
+            description.push_str(": ");
+            description.push_str(tool.description);
+            description.push_str(" (command: ");
+            description.push_str(tool.command);
+
+            if !tool.patterns.is_empty() {
+                description.push_str(", patterns: ");
+                description.push_str(&tool.patterns.join(", "));
+            }
+
+            description.push(')');
+        }
+
+        description
+    }
 }
 
 static TOOLS: &[Tool] = &[
@@ -58,5 +84,11 @@ static TOOLS: &[Tool] = &[
         patterns: &["translate", "replace characters", "lowercase", "uppercase"],
         ok_exit_codes: &[0],
     },
+    Tool {
+        id: "jq",
+        command: "jq",
+        description: "Filter and transform JSON data.",
+        patterns: &["json", "jq", "filter json", "transform json"],
+        ok_exit_codes: &[0],
+    },
 ];
-

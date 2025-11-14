@@ -17,10 +17,12 @@ pub fn run() -> Result<(), String> {
         config.instruction, input.bytes, input.lines, input.is_probably_binary
     ));
 
+    let registry = registry::ToolRegistry::new();
+
     let planner_config = planner::PlannerConfig::from_env();
     let planner = planner::Planner::new(planner_config);
 
-    match planner.plan(&config.instruction, &input) {
+    match planner.plan(&config.instruction, &input, &registry) {
         Ok(plan_output) => {
             logging::info(&format!("plan: {}", plan_output.raw_json));
 
@@ -37,7 +39,6 @@ pub fn run() -> Result<(), String> {
 
                     logging::info(&format!("parsed plan steps: {}", commands));
 
-                    let registry = registry::ToolRegistry::new();
                     let executor = executor::Executor::new();
 
                     if let Err(error) = executor.execute(&executable_plan, &input, &registry) {

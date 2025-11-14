@@ -31,7 +31,10 @@ impl Executor {
                 .find_by_id(&step.cmd)
                 .ok_or_else(|| format!("unknown tool in plan: {}", step.cmd))?;
 
-            let mut child = Command::new(tool.command)
+            let mut child = Command::new(tool.command);
+            child.args(&step.args);
+
+            let mut child = child
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
