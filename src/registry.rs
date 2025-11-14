@@ -3,6 +3,7 @@ pub struct Tool {
     pub command: &'static str,
     pub description: &'static str,
     pub patterns: &'static [&'static str],
+    pub ok_exit_codes: &'static [i32],
 }
 
 pub struct ToolRegistry;
@@ -27,30 +28,35 @@ static TOOLS: &[Tool] = &[
         command: "sort",
         description: "Sort lines of text.",
         patterns: &["sort", "order", "alphabetize", "sort lines"],
+        ok_exit_codes: &[0],
     },
     Tool {
         id: "uniq",
         command: "uniq",
         description: "Remove duplicate lines.",
         patterns: &["dedupe", "unique", "remove duplicates"],
+        ok_exit_codes: &[0],
     },
     Tool {
         id: "grep",
         command: "grep",
         description: "Filter lines that match a pattern.",
         patterns: &["search", "filter", "match", "grep"],
+        ok_exit_codes: &[0, 1],
     },
     Tool {
         id: "cut",
         command: "cut",
         description: "Extract fields or columns from lines.",
         patterns: &["columns", "fields", "delimiter", "extract columns"],
+        ok_exit_codes: &[0],
     },
     Tool {
         id: "tr",
         command: "tr",
         description: "Translate or delete characters in text.",
         patterns: &["translate", "replace characters", "lowercase", "uppercase"],
+        ok_exit_codes: &[0],
     },
 ];
 

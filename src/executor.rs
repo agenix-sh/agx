@@ -47,13 +47,20 @@ impl Executor {
                 .wait_with_output()
                 .map_err(|error| format!("failed to wait for '{}': {error}", tool.command))?;
 
-            if !output.status.success() {
+            let status = output.status;
+            let code = status.code();
+            let is_ok = match code {
+                Some(value) => tool.ok_exit_codes.contains(&value),
+                None => status.success(),
+            };
+
+            if !is_ok {
                 let stderr = String::from_utf8_lossy(&output.stderr);
 
                 return Err(format!(
                     "command '{}' failed with status {}: {}",
                     tool.command,
-                    output.status,
+                    status,
                     stderr.trim()
                 ));
             }
@@ -66,4 +73,3 @@ impl Executor {
             .map_err(|error| format!("failed to write final output to STDOUT: {error}"))
     }
 }
-
