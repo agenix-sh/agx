@@ -7,14 +7,37 @@ pub mod registry;
 pub mod executor;
 
 pub fn run() -> Result<(), String> {
-    let config = cli::CliConfig::from_env()?;
+    let mut config = cli::CliConfig::from_env()?;
+
+    if config.show_version {
+        cli::print_version();
+    }
+
+    if config.show_help {
+        cli::print_help();
+    }
+
+    if config.show_version || config.show_help {
+        return Ok(());
+    }
+
+    let instruction = config.instruction.take().ok_or_else(|| {
+        "an instruction is required. Run `agx --help` or `agx -v` for usage information."
+            .to_string()
+    })?;
+
+    logging::set_debug(config.debug);
+
+    if config.debug {
+        logging::info("debug logging enabled");
+    }
 
     let input = input::InputCollector::collect()
         .map_err(|error| format!("failed to read from STDIN: {error}"))?;
 
     logging::info(&format!(
         "instruction: {}; bytes: {}; lines: {}; binary: {}",
-        config.instruction, input.bytes, input.lines, input.is_probably_binary
+        instruction, input.bytes, input.lines, input.is_probably_binary
     ));
 
     let registry = registry::ToolRegistry::new();
@@ -22,7 +45,7 @@ pub fn run() -> Result<(), String> {
     let planner_config = planner::PlannerConfig::from_env();
     let planner = planner::Planner::new(planner_config);
 
-    match planner.plan(&config.instruction, &input, &registry) {
+    match planner.plan(&instruction, &input, &registry) {
         Ok(plan_output) => {
             logging::info(&format!("plan: {}", plan_output.raw_json));
 
