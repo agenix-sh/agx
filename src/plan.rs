@@ -8,6 +8,8 @@ pub struct WorkflowPlan {
 #[derive(Debug, Deserialize)]
 pub struct PlanStep {
     pub cmd: String,
+    #[serde(default)]
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

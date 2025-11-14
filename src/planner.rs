@@ -2,14 +2,9 @@ use std::process::Command;
 
 use crate::input::InputSummary;
 use crate::plan::WorkflowPlan;
+use crate::registry::ToolRegistry;
 
 const DEFAULT_OLLAMA_MODEL: &str = "phi3:mini";
-
-const DEFAULT_TOOLS_DESCRIPTION: &str = r#"- sort: Sort lines of text (command: sort)
-- uniq: Remove duplicate lines (command: uniq)
-- grep: Filter lines that match a pattern (command: grep)
-- cut: Extract fields or columns from lines (command: cut)
-- tr: Translate or delete characters in text (command: tr)"#;
 
 pub struct PlannerConfig {
     pub model: String,
@@ -44,7 +39,12 @@ impl Planner {
         Self { config }
     }
 
-    pub fn plan(&self, instruction: &str, input: &InputSummary) -> Result<PlannerOutput, String> {
+    pub fn plan(
+        &self,
+        instruction: &str,
+        input: &InputSummary,
+        registry: &ToolRegistry,
+    ) -> Result<PlannerOutput, String> {
         let input_description = format!(
             "bytes: {bytes}, lines: {lines}, is_empty: {is_empty}, is_probably_binary: {binary}",
             bytes = input.bytes,
@@ -52,6 +52,8 @@ impl Planner {
             is_empty = input.is_empty,
             binary = input.is_probably_binary
         );
+
+        let tools_description = registry.describe_for_planner();
 
         let prompt = format!(
             "You are the AGX Planner.\n\
@@ -65,13 +67,15 @@ impl Planner {
              Available tools:\n\
              {tools}\n\
              \n\
-             Respond with a single JSON object only, no extra commentary, in this exact shape:\n\
-             {{\"plan\": [{{\"cmd\": \"tool-id\"}}]}}\n\
+             Respond with a single JSON object only, no extra commentary, in one of these exact shapes:\n\
+             {{\"plan\": [{{\"cmd\": \"tool-id\"}}, {{\"cmd\": \"tool-id\", \"args\": [\"arg1\", \"arg2\"]}}]}}\n\
+             or\n\
+             {{\"plan\": [\"tool-id\", \"another-tool-id\"]}}\n\
              \n\
              Use only the tools listed above and produce a deterministic, minimal plan.",
             instruction = instruction,
             input_description = input_description,
-            tools = DEFAULT_TOOLS_DESCRIPTION
+            tools = tools_description
         );
 
         let output = Command::new("ollama")
