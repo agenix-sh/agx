@@ -6,21 +6,86 @@ use crate::registry::ToolRegistry;
 
 const DEFAULT_OLLAMA_MODEL: &str = "phi3:mini";
 
+pub enum BackendKind {
+    Ollama,
+}
+
+impl BackendKind {
+    pub fn from_env() -> Self {
+        match std::env::var("AGX_BACKEND") {
+            Ok(value) => {
+                let normalized = value.to_lowercase();
+
+                match normalized.as_str() {
+                    "" | "ollama" => BackendKind::Ollama,
+                    _ => BackendKind::Ollama,
+                }
+            }
+            Err(_) => BackendKind::Ollama,
+        }
+    }
+}
+
 pub struct PlannerConfig {
     pub model: String,
+    pub backend: BackendKind,
 }
 
 impl PlannerConfig {
     pub fn from_env() -> Self {
-        let model = std::env::var("AGX_OLLAMA_MODEL")
-            .unwrap_or_else(|_| DEFAULT_OLLAMA_MODEL.to_string());
+        let backend = BackendKind::from_env();
 
+        let model = match backend {
+            BackendKind::Ollama => std::env::var("AGX_OLLAMA_MODEL")
+                .unwrap_or_else(|_| DEFAULT_OLLAMA_MODEL.to_string()),
+        };
+
+        Self { model, backend }
+    }
+}
+
+pub trait ModelBackend {
+    fn generate_plan(&self, prompt: &str) -> Result<String, String>;
+}
+
+struct OllamaBackend {
+    model: String,
+}
+
+impl OllamaBackend {
+    fn new(model: String) -> Self {
         Self { model }
     }
 }
 
+impl ModelBackend for OllamaBackend {
+    fn generate_plan(&self, prompt: &str) -> Result<String, String> {
+        let output = Command::new("ollama")
+            .arg("run")
+            .arg(&self.model)
+            .arg(prompt)
+            .output()
+            .map_err(|error| format!("failed to run ollama: {error}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            return Err(format!(
+                "ollama exited with status {}: {}",
+                output.status,
+                stderr.trim()
+            ));
+        }
+
+        let text = String::from_utf8(output.stdout)
+            .map_err(|error| format!("ollama produced non-UTF-8 output: {error}"))?;
+
+        Ok(text.trim().to_string())
+    }
+}
+
 pub struct Planner {
-    config: PlannerConfig,
+    backend: Box<dyn ModelBackend>,
 }
 
 pub struct PlannerOutput {
@@ -36,7 +101,11 @@ impl PlannerOutput {
 
 impl Planner {
     pub fn new(config: PlannerConfig) -> Self {
-        Self { config }
+        let backend: Box<dyn ModelBackend> = match config.backend {
+            BackendKind::Ollama => Box::new(OllamaBackend::new(config.model)),
+        };
+
+        Self { backend }
     }
 
     pub fn plan(
@@ -78,28 +147,8 @@ impl Planner {
             tools = tools_description
         );
 
-        let output = Command::new("ollama")
-            .arg("run")
-            .arg(&self.config.model)
-            .arg(&prompt)
-            .output()
-            .map_err(|error| format!("failed to run ollama: {error}"))?;
+        let text = self.backend.generate_plan(&prompt)?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            return Err(format!(
-                "ollama exited with status {}: {}",
-                output.status,
-                stderr.trim()
-            ));
-        }
-
-        let text = String::from_utf8(output.stdout)
-            .map_err(|error| format!("ollama produced non-UTF-8 output: {error}"))?;
-
-        Ok(PlannerOutput {
-            raw_json: text.trim().to_string(),
-        })
+        Ok(PlannerOutput { raw_json: text })
     }
 }
