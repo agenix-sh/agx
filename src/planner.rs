@@ -8,6 +8,8 @@ const DEFAULT_OLLAMA_MODEL: &str = "phi3:mini";
 
 pub enum BackendKind {
     Ollama,
+    #[cfg(feature = "embedded-backend")]
+    Embedded,
 }
 
 impl BackendKind {
@@ -18,6 +20,8 @@ impl BackendKind {
 
                 match normalized.as_str() {
                     "" | "ollama" => BackendKind::Ollama,
+                    #[cfg(feature = "embedded-backend")]
+                    "embedded" | "llm" => BackendKind::Embedded,
                     _ => BackendKind::Ollama,
                 }
             }
@@ -38,6 +42,9 @@ impl PlannerConfig {
         let model = match backend {
             BackendKind::Ollama => std::env::var("AGX_OLLAMA_MODEL")
                 .unwrap_or_else(|_| DEFAULT_OLLAMA_MODEL.to_string()),
+            #[cfg(feature = "embedded-backend")]
+            BackendKind::Embedded => std::env::var("AGX_MODEL_PATH")
+                .unwrap_or_else(|_| "model.bin".to_string()),
         };
 
         Self { model, backend }
@@ -84,6 +91,79 @@ impl ModelBackend for OllamaBackend {
     }
 }
 
+#[cfg(feature = "embedded-backend")]
+struct EmbeddedBackend {
+    model: Box<dyn llm::Model>,
+}
+
+#[cfg(feature = "embedded-backend")]
+impl EmbeddedBackend {
+    fn new(model_path: String) -> Self {
+        use std::path::Path;
+
+        let arch = match std::env::var("AGX_MODEL_ARCH") {
+            Ok(value) => value
+                .parse::<llm::ModelArchitecture>()
+                .unwrap_or(llm::ModelArchitecture::Llama),
+            Err(_) => llm::ModelArchitecture::Llama,
+        };
+
+        let tokenizer_source = llm::TokenizerSource::Embedded;
+
+        let model = llm::load_dynamic(
+            Some(arch),
+            Path::new(&model_path),
+            tokenizer_source,
+            Default::default(),
+            llm::load_progress_callback_stdout,
+        )
+        .unwrap_or_else(|error| {
+            panic!("failed to load embedded model from {}: {error}", model_path)
+        });
+
+        Self { model }
+    }
+}
+
+#[cfg(feature = "embedded-backend")]
+impl ModelBackend for EmbeddedBackend {
+    fn generate_plan(&self, prompt: &str) -> Result<String, String> {
+        use std::convert::Infallible;
+
+        use llm::{InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse};
+        use rand::thread_rng;
+
+        let mut session = self.model.start_session(Default::default());
+        let mut output = String::new();
+
+        let result = session.infer::<Infallible>(
+            self.model.as_ref(),
+            &mut thread_rng(),
+            &InferenceRequest {
+                prompt: prompt.into(),
+                parameters: &InferenceParameters::default(),
+                play_back_previous_tokens: false,
+                maximum_token_count: None,
+            },
+            &mut Default::default(),
+            |response| {
+                if let InferenceResponse::PromptToken(token)
+                | InferenceResponse::InferredToken(token) = response
+                {
+                    output.push_str(&token);
+                }
+
+                Ok(InferenceFeedback::Continue)
+            },
+        );
+
+        match result {
+            Ok(_) => Ok(output.trim().to_string()),
+            Err(error) => Err(format!("embedded model inference error: {error}")),
+        }
+    }
+}
+
 pub struct Planner {
     backend: Box<dyn ModelBackend>,
 }
@@ -103,6 +183,8 @@ impl Planner {
     pub fn new(config: PlannerConfig) -> Self {
         let backend: Box<dyn ModelBackend> = match config.backend {
             BackendKind::Ollama => Box::new(OllamaBackend::new(config.model)),
+            #[cfg(feature = "embedded-backend")]
+            BackendKind::Embedded => Box::new(EmbeddedBackend::new(config.model)),
         };
 
         Self { backend }
