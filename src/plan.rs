@@ -18,21 +18,7 @@ struct SimpleWorkflowPlan {
 impl WorkflowPlan {
     pub fn from_str(value: &str) -> Result<Self, serde_json::Error> {
         let cleaned = strip_markdown_fence(value);
-
-        match serde_json::from_str::<WorkflowPlan>(&cleaned) {
-            Ok(plan) => Ok(plan),
-            Err(_) => {
-                let simple: SimpleWorkflowPlan = serde_json::from_str(&cleaned)?;
-
-                Ok(WorkflowPlan {
-                    plan: simple
-                        .plan
-                        .into_iter()
-                        .map(|cmd| PlanStep { cmd })
-                        .collect(),
-                })
-            }
-        }
+        parse_any_form(&cleaned)
     }
 }
 
@@ -61,5 +47,74 @@ fn strip_markdown_fence(value: &str) -> String {
     }
 
     body
+}
+
+fn parse_any_form(text: &str) -> Result<WorkflowPlan, serde_json::Error> {
+    if let Ok(plan) = serde_json::from_str::<WorkflowPlan>(text) {
+        return Ok(plan);
+    }
+
+    if let Ok(simple) = serde_json::from_str::<SimpleWorkflowPlan>(text) {
+        return Ok(WorkflowPlan {
+            plan: simple
+                .plan
+                .into_iter()
+                .map(|cmd| PlanStep { cmd })
+                .collect(),
+        });
+    }
+
+    if let Ok(steps) = serde_json::from_str::<Vec<PlanStep>>(text) {
+        return Ok(WorkflowPlan { plan: steps });
+    }
+
+    if let Ok(cmds) = serde_json::from_str::<Vec<String>>(text) {
+        return Ok(WorkflowPlan {
+            plan: cmds
+                .into_iter()
+                .map(|cmd| PlanStep { cmd })
+                .collect(),
+        });
+    }
+
+    if let Some(extracted) = extract_first_json_value(text) {
+        if extracted != text {
+            return parse_any_form(extracted);
+        }
+    }
+
+    serde_json::from_str::<WorkflowPlan>(text)
+}
+
+fn extract_first_json_value(text: &str) -> Option<&str> {
+    let trimmed = text.trim();
+    let mut start = None;
+    let mut depth = 0;
+
+    for (index, character) in trimmed.char_indices() {
+        if start.is_none() {
+            if character == '{' || character == '[' {
+                start = Some(index);
+                depth = 1;
+            }
+
+            continue;
+        }
+
+        if character == '{' || character == '[' {
+            depth += 1;
+        } else if character == '}' || character == ']' {
+            depth -= 1;
+
+            if depth == 0 {
+                let end = index + character.len_utf8();
+                let begin = start.unwrap();
+
+                return Some(&trimmed[begin..end]);
+            }
+        }
+    }
+
+    None
 }
 
