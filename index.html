@@ -2,36 +2,87 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>AGX — Agentic Unix CLI</title>
+    <title>AGENIX / AGX — Agents for Unix</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem; line-height: 1.5; }
-      code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-      pre { background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 4px; overflow-x: auto; }
-      h1, h2 { margin-top: 1.5rem; }
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 2rem;
+        line-height: 1.5;
+        color: #222;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      pre {
+        background: #f5f5f5;
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      h1, h2 {
+        margin-top: 1.5rem;
+      }
+      h1 {
+        margin-bottom: 0.25rem;
+      }
+      .tagline {
+        margin-top: 0;
+        color: #555;
+      }
+      .section {
+        margin-top: 2rem;
+      }
     </style>
   </head>
   <body>
-    <h1>AGX — Agentic Unix CLI</h1>
-    <p>
-      <code>agx</code> is a small agent that reads from <code>STDIN</code>, uses a local model to plan
-      Unix-style workflows, and executes them as pipelines of familiar tools like
-      <code>sort</code>, <code>uniq</code>, <code>grep</code>, <code>cut</code>, <code>tr</code>, <code>jq</code>, and <code>awk</code>.
-    </p>
+    <h1>AGENIX / AGX</h1>
+    <p class="tagline">AGEnts for uNIX — an agentic CLI that speaks Unix.</p>
 
-    <h2>Install</h2>
-    <p>Once DNS for <code>agenix.sh</code> is pointed at this site, you will be able to install AGX with:</p>
-    <pre><code>curl https://agenix.sh/install.sh | sh</code></pre>
-    <p>
-      Until then, you can download binaries from GitHub Releases or build from source using
-      <code>cargo install</code>.
-    </p>
+    <div class="section">
+      <h2>What is AGX?</h2>
+      <p>
+        <code>agx</code> is a small agent that reads from <code>STDIN</code>, uses a local model to plan
+        Unix-style workflows, and executes them as pipelines of familiar tools like
+        <code>sort</code>, <code>uniq</code>, <code>grep</code>, <code>cut</code>, <code>tr</code>, <code>jq</code>, and <code>awk</code>.
+      </p>
+      <p>
+        You describe what you want in natural language; AGX chooses a sequence of commands,
+        executes them safely, and writes the result to <code>STDOUT</code>.
+      </p>
+    </div>
 
-    <h2>Usage</h2>
-    <p>AGX behaves like a Unix filter:</p>
-    <pre><code>cat input.txt | agx "remove duplicates" &gt; out.txt</code></pre>
+    <div class="section">
+      <h2>Install</h2>
+      <p>On Linux or macOS, install or update AGX with:</p>
+      <pre><code>curl https://agenix.sh/install.sh | sh</code></pre>
+      <p>This script:</p>
+      <ul>
+        <li>Detects your OS and architecture.</li>
+        <li>Downloads a prebuilt <code>agx</code> binary from GitHub Releases when available.</li>
+        <li>Falls back to building from source with <code>cargo</code> if needed.</li>
+        <li>Installs <code>agx</code> into a standard location (such as <code>/usr/local/bin</code> or <code>$HOME/.local/bin</code>).</li>
+      </ul>
+      <p>You can also install from source directly with Rust:</p>
+      <pre><code>cargo install agx</code></pre>
+    </div>
 
-    <p>For more examples, see the AGX repository:</p>
-    <pre><code>https://github.com/agenix-sh/agx</code></pre>
+    <div class="section">
+      <h2>Examples</h2>
+      <p>AGX behaves like a Unix filter:</p>
+      <pre><code>cat input.txt | agx "remove duplicates" &gt; out.txt</code></pre>
+      <p>More examples you can try:</p>
+      <pre><code># Dedupe CSV rows by first three columns
+cat data.csv | agx "dedupe rows based on first three CSV columns" &gt; out.csv
+
+# Extract id and name from a JSON array using jq
+cat data.json | agx "extract id and name fields from each JSON object" &gt; out.json</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Project</h2>
+      <p>Source code, roadmap, and design docs are available on GitHub:</p>
+      <pre><code>https://github.com/agenix-sh/agx</code></pre>
+    </div>
   </body>
 </html>
