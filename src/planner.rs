@@ -1,6 +1,7 @@
 use std::process::Command;
 
 use crate::input::InputSummary;
+use crate::plan::WorkflowPlan;
 
 const DEFAULT_OLLAMA_MODEL: &str = "phi3:mini";
 
@@ -29,6 +30,13 @@ pub struct Planner {
 
 pub struct PlannerOutput {
     pub raw_json: String,
+}
+
+impl PlannerOutput {
+    pub fn parse(&self) -> Result<WorkflowPlan, String> {
+        WorkflowPlan::from_str(&self.raw_json)
+            .map_err(|error| format!("failed to parse planner JSON: {error}"))
+    }
 }
 
 impl Planner {
@@ -69,8 +77,7 @@ impl Planner {
         let output = Command::new("ollama")
             .arg("run")
             .arg(&self.config.model)
-            .arg("--prompt")
-            .arg(prompt)
+            .arg(&prompt)
             .output()
             .map_err(|error| format!("failed to run ollama: {error}"))?;
 
@@ -92,4 +99,3 @@ impl Planner {
         })
     }
 }
-
