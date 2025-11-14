@@ -26,7 +26,9 @@ pub fn run() -> Result<(), String> {
 
             match plan_output.parse() {
                 Ok(parsed) => {
-                    let commands = parsed
+                    let executable_plan = parsed.normalize_for_execution();
+
+                    let commands = executable_plan
                         .plan
                         .iter()
                         .map(|step| step.cmd.as_str())
@@ -38,7 +40,7 @@ pub fn run() -> Result<(), String> {
                     let registry = registry::ToolRegistry::new();
                     let executor = executor::Executor::new();
 
-                    if let Err(error) = executor.execute(&parsed, &input, &registry) {
+                    if let Err(error) = executor.execute(&executable_plan, &input, &registry) {
                         logging::info(&format!("executor error: {error}"));
                     }
                 }

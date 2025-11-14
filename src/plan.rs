@@ -20,6 +20,21 @@ impl WorkflowPlan {
         let cleaned = strip_markdown_fence(value);
         parse_any_form(&cleaned)
     }
+
+    pub fn normalize_for_execution(mut self) -> Self {
+        if self.plan.len() == 1 && self.plan[0].cmd == "uniq" {
+            self.plan = vec![
+                PlanStep {
+                    cmd: "sort".to_string(),
+                },
+                PlanStep {
+                    cmd: "uniq".to_string(),
+                },
+            ];
+        }
+
+        self
+    }
 }
 
 fn strip_markdown_fence(value: &str) -> String {
@@ -117,4 +132,3 @@ fn extract_first_json_value(text: &str) -> Option<&str> {
 
     None
 }
-
