@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AGX Docs — Agents for Unix</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 2rem;
+        line-height: 1.5;
+        color: #222;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      pre {
+        background: #f5f5f5;
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      h1, h2, h3 {
+        margin-top: 1.5rem;
+      }
+      h1 {
+        margin-bottom: 0.25rem;
+      }
+      .tagline {
+        margin-top: 0;
+        color: #555;
+      }
+      .section {
+        margin-top: 2rem;
+      }
+      a {
+        color: #0366d6;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AGX Documentation</h1>
+    <p class="tagline">Quick overview of how to use and extend AGX.</p>
+
+    <div class="section">
+      <h2>Getting Started</h2>
+      <p>AGX runs as a Unix filter:</p>
+      <pre><code>cat input.txt | agx "your instruction" &gt; output.txt</code></pre>
+      <p>
+        The agent:
+      </p>
+      <ol>
+        <li>Summarises the input (bytes, lines, basic heuristics).</li>
+        <li>Asks a local model to plan a workflow.</li>
+        <li>Executes that workflow using standard Unix tools.</li>
+      </ol>
+    </div>
+
+    <div class="section">
+      <h2>Built-in Tools</h2>
+      <p>AGX currently knows about these tools:</p>
+      <ul>
+        <li><code>sort</code> — sort lines of text.</li>
+        <li><code>uniq</code> — remove duplicate lines (usually after <code>sort</code>).</li>
+        <li><code>grep</code> — filter lines matching a pattern.</li>
+        <li><code>cut</code> — extract fields/columns from delimited text.</li>
+        <li><code>tr</code> — translate or delete characters.</li>
+        <li><code>jq</code> — filter and transform JSON.</li>
+        <li><code>awk</code> (via shell) — row-wise transformations when needed.</li>
+      </ul>
+      <p>The planner selects from this registry and produces a JSON plan that the executor runs.</p>
+    </div>
+
+    <div class="section">
+      <h2>Examples</h2>
+
+      <h3>1. Remove duplicate lines</h3>
+      <pre><code>cat test.txt | agx "remove duplicates" &gt; out.txt</code></pre>
+      <p>AGX typically plans:</p>
+      <pre><code>{"plan":[{"cmd":"sort"},{"cmd":"uniq"}]}</code></pre>
+
+      <h3>2. Dedupe CSV rows by first three columns</h3>
+      <pre><code>cat data.csv | agx "dedupe rows based on the first three CSV columns" &gt; out.csv</code></pre>
+      <p>Typical structured plan:</p>
+      <pre><code>{
+  "plan": [
+    {"cmd": "cut", "args": ["-d", ",", "-f1-3"]},
+    {"cmd": "sort"},
+    {"cmd": "uniq"}
+  ]
+}</code></pre>
+
+      <h3>3. Filter JSON with jq</h3>
+      <pre><code>cat data.json | agx "extract id and name fields from each JSON object" &gt; out.json</code></pre>
+      <p>Typical plan:</p>
+      <pre><code>{
+  "plan": [
+    {"cmd": "jq", "args": [".[] | {id, name}"]}
+  ]
+}</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Agents Inside AGX</h2>
+      <p>AGX itself is structured as a small set of agents:</p>
+      <ul>
+        <li><strong>Planner</strong> — talks to a local model (e.g. Ollama) to produce JSON plans.</li>
+        <li><strong>Registry</strong> — describes the available Unix tools and their capabilities.</li>
+        <li><strong>Executor</strong> — runs the plan using <code>std::process::Command</code> with safe piping.</li>
+        <li><strong>Input Collector</strong> — reads from <code>STDIN</code> and summarises the stream.</li>
+      </ul>
+      <p>
+        For a deeper architectural description, see the <code>AGENTS.md</code> and <code>ARCHITECTURE.md</code>
+        files in the GitHub repository.
+      </p>
+    </div>
+
+    <div class="section">
+      <h2>More</h2>
+      <p>
+        Full source, roadmap, and design docs:
+      </p>
+      <pre><code>https://github.com/agenix-sh/agx</code></pre>
+      <p><a href="/">Back to the AGX homepage</a></p>
+    </div>
+  </body>
+</html>
+
