@@ -187,9 +187,8 @@ impl Planner {
         };
 
         Self {
-            backend: backend.unwrap_or_else(|error| {
-                panic!("planner backend initialization failed: {error}")
-            }),
+            backend: backend
+                .unwrap_or_else(|error| panic!("planner backend initialization failed: {error}")),
         }
     }
 

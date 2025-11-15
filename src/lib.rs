@@ -1,3 +1,4 @@
+pub mod agq_client;
 pub mod cli;
 pub mod executor;
 pub mod input;
@@ -70,11 +71,33 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                 plan.plan.len()
             ));
 
-            print_json(json!({
-                "status": "pending",
-                "message": "AGQ submission not yet implemented. See issue #31.",
-                "plan": plan
-            }));
+            let plan_json = serde_json::to_string(&plan)
+                .map_err(|error| format!("failed to serialize plan for submission: {error}"))?;
+
+            let agq_config = agq_client::AgqConfig::from_env();
+            let client = agq_client::AgqClient::new(agq_config);
+
+            match client.submit_plan(&plan_json) {
+                Ok(submission) => {
+                    let metadata = plan_buffer::PlanMetadata {
+                        job_id: submission.job_id.clone(),
+                        submitted_at: chrono::DateTime::<chrono::Utc>::from(
+                            submission.submitted_at,
+                        )
+                        .to_rfc3339(),
+                    };
+                    storage.save_submission_metadata(&metadata)?;
+
+                    print_json(json!({
+                        "status": "ok",
+                        "job_id": submission.job_id,
+                        "plan_path": storage.path().display().to_string()
+                    }));
+                }
+                Err(error) => {
+                    return Err(format!("PLAN submit failed: {error}"));
+                }
+            }
         }
         cli::PlanCommand::Add { instruction } => {
             let input = collect_planner_input()?;

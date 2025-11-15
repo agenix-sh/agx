@@ -46,6 +46,16 @@ Phase 1 introduces a `PLAN` REPL-style workflow:
 - For workflow configuration details and rollout notes, see `.github/DEPLOYMENT_SUMMARY.md`.
 - Every pull request must pass the PR Checks workflow and supply tests (see `AGENTS.md` for the engineering contract).
 
+## AGQ submission
+
+`PLAN submit` sends the current plan to AGQ over RESP:
+
+- `AGQ_ADDR` — TCP address of AGQ (default: `127.0.0.1:6380`)
+- `AGQ_SESSION_KEY` — optional session key for AUTH
+- `AGQ_TIMEOUT_SECS` — network timeout in seconds (default: 5)
+
+On success, the CLI prints JSON including the `job_id` and writes metadata alongside the plan buffer for future Ops commands.
+
 ## Examples
 
 ```bash

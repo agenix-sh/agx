@@ -33,6 +33,12 @@ Transform natural-language user instructions into deterministic JSON workflow pl
 - Phase 2: embedded llama.cpp fallback
 - Future: additional backends via `PlannerConfig`
 
+### AGQ Submission
+- `AGQ_ADDR` (default: `127.0.0.1:6380`)
+- `AGQ_SESSION_KEY` (optional) for AUTH
+- `AGQ_TIMEOUT_SECS` (default: 5)
+- On success, `PLAN submit` writes plan submission metadata (job ID, timestamp) next to the plan buffer for later Ops commands.
+
 ---
 
 ## 2. Ops Agent (AGX CLI — JOBS/WORKERS/QUEUE)
