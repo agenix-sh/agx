@@ -41,6 +41,8 @@ pub fn run() -> Result<(), String> {
 }
 
 fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
+    enforce_instruction_limit(&command)?;
+
     let storage = plan_buffer::PlanStorage::from_env();
 
     match command {
@@ -127,9 +129,41 @@ fn collect_planner_input() -> Result<input::InputSummary, String> {
     input::InputCollector::collect().map_err(|error| format!("failed to read from STDIN: {error}"))
 }
 
+fn enforce_instruction_limit(command: &cli::PlanCommand) -> Result<(), String> {
+    const MAX_INSTRUCTION_BYTES: usize = 8 * 1024;
+
+    if let cli::PlanCommand::Add { instruction } = command {
+        if instruction.len() > MAX_INSTRUCTION_BYTES {
+            return Err(format!(
+                "instruction is too long ({} bytes > {} allowed)",
+                instruction.len(),
+                MAX_INSTRUCTION_BYTES
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn print_json(value: serde_json::Value) {
     match serde_json::to_string_pretty(&value) {
         Ok(json_text) => println!("{json_text}"),
         Err(error) => eprintln!("failed to serialize CLI output: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enforce_instruction_limit_rejects_large() {
+        let long_instruction = "x".repeat(9 * 1024);
+        let command = cli::PlanCommand::Add {
+            instruction: long_instruction,
+        };
+
+        let result = enforce_instruction_limit(&command);
+        assert!(result.is_err());
     }
 }

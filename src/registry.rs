@@ -48,6 +48,23 @@ impl ToolRegistry {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_by_id_returns_tool() {
+        let registry = ToolRegistry::new();
+        assert!(registry.find_by_id("sort").is_some());
+    }
+
+    #[test]
+    fn find_by_id_missing_tool() {
+        let registry = ToolRegistry::new();
+        assert!(registry.find_by_id("does-not-exist").is_none());
+    }
+}
+
 static TOOLS: &[Tool] = &[
     Tool {
         id: "sort",
