@@ -116,6 +116,7 @@ This workflow is used to implement GitHub issues for the `agenix-sh/agx` reposit
 
 1. Inspect the issue  
    - Use `gh issue view <number> --repo agenix-sh/agx --json number,title,body,state,url` to read the issue details.
+   - **Issue naming**: Use the `AGX-XXX: Title` format (for example, `AGX-030: Implement PLAN subcommands`). Keep the numeric ID stable across PRs/branches.
 
 2. Create a feature branch  
    - From `main`, create a branch named `issue-<number>-<short-slug>`, for example:  
@@ -143,3 +144,8 @@ This workflow is used to implement GitHub issues for the `agenix-sh/agx` reposit
 - **Tests are required for every change** (unit and/or integration depending on scope); untested work should not merge.
 - Favor deterministic tests that cover CLI parsing, planner logic, RESP client behaviour, and registry metadata.
 - Add regression coverage alongside fixes to prevent repeats.
+
+### Naming & PR Expectations
+- **Issues**: `AGX-###: …` (e.g., `AGX-031: Wire PLAN submit to AGQ`). Tool-specific repos should follow the same pattern (for example, `AGX-OCR-00X` once those projects exist).
+- **Branches**: `issue-<number>-<slug>` using the GitHub issue number so automation can correlate (e.g., `issue-30-plan-cli` for AGX-030).
+- **Pull requests**: Title must match `AGX-###: …` exactly. The PR body should include `## Issue`, `## Security Review`, `## Testing` sections as enforced by PR Checks.
