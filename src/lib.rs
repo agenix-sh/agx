@@ -2,6 +2,7 @@ pub mod agq_client;
 pub mod cli;
 pub mod executor;
 pub mod input;
+pub mod job;
 pub mod logging;
 pub mod plan;
 pub mod plan_buffer;
@@ -72,13 +73,14 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                 plan.plan.len()
             ));
 
-            let plan_json = serde_json::to_string(&plan)
-                .map_err(|error| format!("failed to serialize plan for submission: {error}"))?;
+            let job = build_job_envelope(plan)?;
+            let job_json = serde_json::to_string(&job)
+                .map_err(|error| format!("failed to serialize job for submission: {error}"))?;
 
             let agq_config = agq_client::AgqConfig::from_env();
             let client = agq_client::AgqClient::new(agq_config);
 
-            match client.submit_plan(&plan_json) {
+            match client.submit_plan(&job_json) {
                 Ok(submission) => {
                     let metadata = plan_buffer::PlanMetadata {
                         job_id: submission.job_id.clone(),
@@ -169,6 +171,18 @@ fn enforce_instruction_limit(command: &cli::PlanCommand) -> Result<(), String> {
     Ok(())
 }
 
+fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, String> {
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let plan_id = uuid::Uuid::new_v4().to_string();
+
+    let envelope = job::JobEnvelope::from_plan(plan, job_id, plan_id);
+    envelope
+        .validate(100)
+        .map_err(|e| format!("job envelope validation failed: {e:?}"))?;
+
+    Ok(envelope)
+}
+
 fn handle_ops_command(command: cli::OpsCommand) -> Result<(), String> {
     let agq_config = agq_client::AgqConfig::from_env();
     let client = agq_client::AgqClient::new(agq_config);
@@ -232,5 +246,30 @@ mod tests {
 
         let result = enforce_instruction_limit(&command);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_job_envelope_assigns_ids_and_validates() {
+        let plan = plan::WorkflowPlan {
+            plan: vec![
+                plan::PlanStep {
+                    cmd: "sort".into(),
+                    args: vec![],
+                    input_from_step: None,
+                    timeout_secs: None,
+                },
+                plan::PlanStep {
+                    cmd: "uniq".into(),
+                    args: vec![],
+                    input_from_step: Some(1),
+                    timeout_secs: None,
+                },
+            ],
+        };
+
+        let env = build_job_envelope(plan).expect("envelope should build");
+        assert_eq!(env.steps.len(), 2);
+        assert!(!env.job_id.is_empty());
+        assert!(!env.plan_id.is_empty());
     }
 }
