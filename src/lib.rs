@@ -174,8 +174,14 @@ fn enforce_instruction_limit(command: &cli::PlanCommand) -> Result<(), String> {
 fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, String> {
     let job_id = uuid::Uuid::new_v4().to_string();
     let plan_id = uuid::Uuid::new_v4().to_string();
+    let plan_description = std::env::var("AGX_PLAN_DESCRIPTION").ok();
 
-    let envelope = job::JobEnvelope::from_plan(plan, job_id, plan_id);
+    let envelope = job::JobEnvelope::from_plan(
+        plan,
+        job_id,
+        plan_id,
+        plan_description.filter(|s| !s.is_empty()),
+    );
     envelope
         .validate(100)
         .map_err(|e| format!("job envelope validation failed: {e:?}"))?;
