@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 
 pub struct InputSummary {
     pub bytes: usize,
@@ -9,6 +9,18 @@ pub struct InputSummary {
 }
 
 pub struct InputCollector;
+
+impl InputSummary {
+    pub fn empty() -> Self {
+        Self {
+            bytes: 0,
+            lines: 0,
+            is_empty: true,
+            is_probably_binary: false,
+            content: Vec::new(),
+        }
+    }
+}
 
 impl InputCollector {
     pub fn collect() -> Result<InputSummary, io::Error> {
@@ -32,5 +44,8 @@ impl InputCollector {
             content,
         })
     }
-}
 
+    pub fn stdin_is_terminal() -> bool {
+        io::stdin().is_terminal()
+    }
+}

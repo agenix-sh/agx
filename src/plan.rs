@@ -1,11 +1,11 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowPlan {
     pub plan: Vec<PlanStep>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanStep {
     pub cmd: String,
     #[serde(default)]
@@ -15,6 +15,12 @@ pub struct PlanStep {
 #[derive(Debug, Deserialize)]
 struct SimpleWorkflowPlan {
     plan: Vec<String>,
+}
+
+impl Default for WorkflowPlan {
+    fn default() -> Self {
+        Self { plan: Vec::new() }
+    }
 }
 
 impl WorkflowPlan {
@@ -202,6 +208,24 @@ fn repair_unescaped_quotes(value: &str) -> String {
             if should_escape {
                 output.push('\\');
                 output.push('"');
+
+                if matches!(chars.peek(), Some('/')) {
+                    let mut lookahead_after_slash = chars.clone();
+                    lookahead_after_slash.next();
+
+                    while let Some(next_char) = lookahead_after_slash.next() {
+                        if next_char.is_whitespace() {
+                            continue;
+                        }
+
+                        if matches!(next_char, ',' | ']' | '}') {
+                            chars.next();
+                        }
+
+                        break;
+                    }
+                }
+
                 continue;
             } else {
                 in_string = false;
@@ -244,7 +268,6 @@ mod tests {
         }"#;
 
         let plan = WorkflowPlan::from_str(broken).expect("plan should be repaired");
-
         assert_eq!(plan.plan.len(), 2);
         assert_eq!(plan.plan[1].cmd, "awk");
         assert_eq!(
