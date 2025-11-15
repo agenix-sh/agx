@@ -43,8 +43,9 @@ impl PlannerConfig {
             BackendKind::Ollama => std::env::var("AGX_OLLAMA_MODEL")
                 .unwrap_or_else(|_| DEFAULT_OLLAMA_MODEL.to_string()),
             #[cfg(feature = "embedded-backend")]
-            BackendKind::Embedded => std::env::var("AGX_MODEL_PATH")
-                .unwrap_or_else(|_| "model.bin".to_string()),
+            BackendKind::Embedded => {
+                std::env::var("AGX_MODEL_PATH").unwrap_or_else(|_| "model.bin".to_string())
+            }
         };
 
         Self { model, backend }

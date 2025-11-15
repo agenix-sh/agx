@@ -98,9 +98,7 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
             let added_steps = executable_plan.plan.len();
 
             let mut buffer = storage.load()?;
-            buffer
-                .plan
-                .extend(executable_plan.plan.into_iter());
+            buffer.plan.extend(executable_plan.plan.into_iter());
 
             logging::info(&format!(
                 "PLAN add appended {added_steps} step(s); buffer now has {} step(s)",
@@ -126,8 +124,7 @@ fn collect_planner_input() -> Result<input::InputSummary, String> {
         return Ok(input::InputSummary::empty());
     }
 
-    input::InputCollector::collect()
-        .map_err(|error| format!("failed to read from STDIN: {error}"))
+    input::InputCollector::collect().map_err(|error| format!("failed to read from STDIN: {error}"))
 }
 
 fn print_json(value: serde_json::Value) {

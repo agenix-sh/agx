@@ -78,12 +78,12 @@ jobs:
         run: cargo install cargo-llvm-cov --locked
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
 
       - name: Check coverage threshold
         run: |
           # Generate coverage summary
-          cargo llvm-cov --all-features --workspace --summary-only > coverage_summary.txt
+          cargo llvm-cov --workspace --summary-only > coverage_summary.txt
           cat coverage_summary.txt
 
           # Extract line coverage percentage from TOTAL row

@@ -40,10 +40,16 @@ impl PlanStorage {
                     return Ok(WorkflowPlan::default());
                 }
 
-                serde_json::from_str(&contents)
-                    .map_err(|error| format!("failed to parse plan buffer {}: {error}", self.display_path()))
+                serde_json::from_str(&contents).map_err(|error| {
+                    format!(
+                        "failed to parse plan buffer {}: {error}",
+                        self.display_path()
+                    )
+                })
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(WorkflowPlan::default()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(WorkflowPlan::default())
+            }
             Err(error) => Err(format!(
                 "failed to read plan buffer {}: {error}",
                 self.display_path()
@@ -75,10 +81,7 @@ impl PlanStorage {
     }
 
     fn display_path(&self) -> String {
-        self.path
-            .as_os_str()
-            .to_string_lossy()
-            .into_owned()
+        self.path.as_os_str().to_string_lossy().into_owned()
     }
 }
 
