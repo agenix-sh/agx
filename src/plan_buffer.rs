@@ -111,9 +111,17 @@ impl PlanStorage {
     }
 
     fn metadata_path(&self) -> PathBuf {
-        let path = self.path.clone();
-        let os_string = path.as_os_str().to_string_lossy().into_owned() + ".meta";
-        PathBuf::from(os_string)
+        let mut path = self.path.clone();
+        let new_extension = match path.extension() {
+            Some(ext) => {
+                let mut os = ext.to_os_string();
+                os.push(".meta");
+                os
+            }
+            None => std::ffi::OsString::from("meta"),
+        };
+        path.set_extension(new_extension);
+        path
     }
 
     fn display_path(&self) -> String {

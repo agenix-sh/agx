@@ -42,7 +42,7 @@ impl AgqClient {
     }
 
     pub fn submit_plan(&self, plan_json: &str) -> Result<SubmissionResult, String> {
-        let mut stream =
+        let stream =
             TcpStream::connect(&self.config.addr).map_err(|e| format!("connect error: {e}"))?;
         stream
             .set_read_timeout(Some(self.config.timeout))
@@ -51,19 +51,32 @@ impl AgqClient {
             .set_write_timeout(Some(self.config.timeout))
             .map_err(|e| format!("failed to set write timeout: {e}"))?;
 
+        let mut reader = BufReader::new(stream);
         if let Some(ref key) = self.config.session_key {
             let auth = resp_array(&["AUTH", key]);
-            stream
-                .write_all(&auth)
-                .map_err(|e| format!("failed to send AUTH: {e}"))?;
+            {
+                let stream = reader.get_mut();
+                stream
+                    .write_all(&auth)
+                    .map_err(|e| format!("failed to send AUTH: {e}"))?;
+            }
+
+            let auth_response = read_resp_value(&mut reader)?;
+            match auth_response {
+                RespValue::SimpleString(_) | RespValue::BulkString(_) => {}
+                RespValue::Error(msg) => return Err(format!("AUTH failed: {msg}")),
+                other => return Err(format!("unexpected AUTH response: {:?}", other)),
+            }
         }
 
         let submit = resp_array(&["PLAN.SUBMIT", plan_json]);
-        stream
-            .write_all(&submit)
-            .map_err(|e| format!("failed to send PLAN.SUBMIT: {e}"))?;
+        {
+            let stream = reader.get_mut();
+            stream
+                .write_all(&submit)
+                .map_err(|e| format!("failed to send PLAN.SUBMIT: {e}"))?;
+        }
 
-        let mut reader = BufReader::new(stream);
         let response = read_resp_value(&mut reader)?;
 
         match response {
@@ -87,7 +100,7 @@ enum RespValue {
     Null,
 }
 
-fn read_resp_value(reader: &mut BufReader<TcpStream>) -> Result<RespValue, String> {
+fn read_resp_value<R: BufRead + Read>(reader: &mut R) -> Result<RespValue, String> {
     let mut line = String::new();
     reader
         .read_line(&mut line)
@@ -165,18 +178,40 @@ mod tests {
         let addr = listener.local_addr().unwrap();
 
         let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let expected_prefix = resp_array(&["AUTH", "secret"])
-                .into_iter()
-                .chain(resp_array(&["PLAN.SUBMIT", "{\"plan\": []}"]).into_iter())
-                .collect::<Vec<u8>>();
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
 
-            let mut buf = vec![0u8; expected_prefix.len()];
-            stream.read_exact(&mut buf).unwrap();
-            assert_eq!(buf, expected_prefix);
+            // Expect AUTH
+            let auth_req = read_resp_value(&mut reader).expect("read auth request");
+            match auth_req {
+                RespValue::Array(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert_eq!(items[0], RespValue::BulkString("AUTH".to_string()));
+                    assert_eq!(items[1], RespValue::BulkString("secret".to_string()));
+                }
+                other => panic!("unexpected auth request: {:?}", other),
+            }
+
+            // Send OK for AUTH
+            reader
+                .get_mut()
+                .write_all(b"+OK\r\n")
+                .expect("write auth ok");
+
+            // Expect PLAN.SUBMIT
+            let submit_req = read_resp_value(&mut reader).expect("read submit");
+            match submit_req {
+                RespValue::Array(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert_eq!(items[0], RespValue::BulkString("PLAN.SUBMIT".to_string()));
+                    assert_eq!(items[1], RespValue::BulkString("{\"plan\": []}".to_string()));
+                }
+                other => panic!("unexpected submit request: {:?}", other),
+            }
 
             // Respond with bulk string job id
-            stream
+            reader
+                .get_mut()
                 .write_all(b"$6\r\njob-42\r\n")
                 .expect("failed to write response");
         });
@@ -205,5 +240,33 @@ mod tests {
 
         let result = client.submit_plan("{\"plan\": []}");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn auth_error_propagates() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
+
+            let _auth_req = read_resp_value(&mut reader).expect("read auth request");
+            reader
+                .get_mut()
+                .write_all(b"-ERR invalid session\r\n")
+                .expect("failed to write error");
+        });
+
+        let client = AgqClient::new(AgqConfig {
+            addr: addr.to_string(),
+            session_key: Some("bad".to_string()),
+            timeout: Duration::from_secs(2),
+        });
+
+        let result = client.submit_plan("{\"plan\": []}");
+        assert!(matches!(result, Err(e) if e.contains("AUTH failed")));
+
+        server.join().unwrap();
     }
 }
