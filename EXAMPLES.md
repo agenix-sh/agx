@@ -1,26 +1,38 @@
 # AGX Examples
 
-This document lists example AGX invocations and the kinds of plans they are expected to produce.
+These examples demonstrate the new PLAN workflow. Each `PLAN add` call can read STDIN when piped so the planner can inspect representative data.
 
-## 1. Remove duplicate lines (text)
+## 1. Remove duplicate lines
 
 ```bash
-cat test.txt | agx "remove duplicates" > out.txt
+agx PLAN new
+cat test.txt | agx PLAN add "remove duplicates"
+agx PLAN preview
 ```
 
-Typical plan:
+Preview output:
 
 ```json
-{"plan":[{"cmd":"sort"},{"cmd":"uniq"}]}
+{
+  "status": "ok",
+  "plan": {
+    "plan": [
+      {"cmd": "sort"},
+      {"cmd": "uniq"}
+    ]
+  }
+}
 ```
 
 ## 2. Dedupe CSV rows by first three columns
 
 ```bash
-cat data.csv | agx "dedupe rows based on the first three CSV columns" > out.csv
+agx PLAN new
+cat data.csv | agx PLAN add "dedupe rows based on the first three CSV columns"
+agx PLAN preview
 ```
 
-Typical plan (once argument support is used):
+Typical normalized plan:
 
 ```json
 {
@@ -35,10 +47,12 @@ Typical plan (once argument support is used):
 ## 3. Filter JSON using jq
 
 ```bash
-cat data.json | agx "extract id and name fields from each JSON object" > out.json
+agx PLAN new
+cat data.json | agx PLAN add "extract id and name fields from each JSON object"
+agx PLAN preview
 ```
 
-Typical plan:
+Possible plan snippet:
 
 ```json
 {
@@ -47,4 +61,3 @@ Typical plan:
   ]
 }
 ```
-

@@ -2,6 +2,7 @@
 name = "agx"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
 
 [features]
 embedded-backend = ["llm", "rand"]
@@ -9,7 +10,7 @@ embedded-backend = ["llm", "rand"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-llm = { version = "0.1", default-features = false, features = ["models"], optional = true }
+llm = { version = "0.1", default-features = false, optional = true }
 rand = { version = "0.8", optional = true }
 
 [profile.dev.package.ggml-sys]

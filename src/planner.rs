@@ -43,8 +43,9 @@ impl PlannerConfig {
             BackendKind::Ollama => std::env::var("AGX_OLLAMA_MODEL")
                 .unwrap_or_else(|_| DEFAULT_OLLAMA_MODEL.to_string()),
             #[cfg(feature = "embedded-backend")]
-            BackendKind::Embedded => std::env::var("AGX_MODEL_PATH")
-                .unwrap_or_else(|_| "model.bin".to_string()),
+            BackendKind::Embedded => {
+                std::env::var("AGX_MODEL_PATH").unwrap_or_else(|_| "model.bin".to_string())
+            }
         };
 
         Self { model, backend }
@@ -98,7 +99,7 @@ struct EmbeddedBackend {
 
 #[cfg(feature = "embedded-backend")]
 impl EmbeddedBackend {
-    fn new(model_path: String) -> Self {
+    fn new(model_path: String) -> Result<Self, String> {
         use std::path::Path;
 
         let arch = match std::env::var("AGX_MODEL_ARCH") {
@@ -117,11 +118,9 @@ impl EmbeddedBackend {
             Default::default(),
             llm::load_progress_callback_stdout,
         )
-        .unwrap_or_else(|error| {
-            panic!("failed to load embedded model from {}: {error}", model_path)
-        });
+        .map_err(|error| format!("failed to load embedded model from {}: {error}", model_path))?;
 
-        Self { model }
+        Ok(Self { model })
     }
 }
 
@@ -181,13 +180,17 @@ impl PlannerOutput {
 
 impl Planner {
     pub fn new(config: PlannerConfig) -> Self {
-        let backend: Box<dyn ModelBackend> = match config.backend {
-            BackendKind::Ollama => Box::new(OllamaBackend::new(config.model)),
+        let backend: Result<Box<dyn ModelBackend>, String> = match config.backend {
+            BackendKind::Ollama => Ok(Box::new(OllamaBackend::new(config.model))),
             #[cfg(feature = "embedded-backend")]
-            BackendKind::Embedded => Box::new(EmbeddedBackend::new(config.model)),
+            BackendKind::Embedded => EmbeddedBackend::new(config.model).map(|b| Box::new(b) as _),
         };
 
-        Self { backend }
+        Self {
+            backend: backend.unwrap_or_else(|error| {
+                panic!("planner backend initialization failed: {error}")
+            }),
+        }
     }
 
     pub fn plan(
