@@ -10,6 +10,10 @@ pub struct PlanStep {
     pub cmd: String,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default)]
+    pub input_from_step: Option<u32>,
+    #[serde(default)]
+    pub timeout_secs: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,10 +39,14 @@ impl WorkflowPlan {
                 PlanStep {
                     cmd: "sort".to_string(),
                     args: Vec::new(),
+                    input_from_step: None,
+                    timeout_secs: None,
                 },
                 PlanStep {
                     cmd: "uniq".to_string(),
                     args: Vec::new(),
+                    input_from_step: None,
+                    timeout_secs: None,
                 },
             ];
         }
@@ -114,6 +122,8 @@ fn try_all_known_forms(text: &str) -> Option<WorkflowPlan> {
                 .map(|cmd| PlanStep {
                     cmd,
                     args: Vec::new(),
+                    input_from_step: None,
+                    timeout_secs: None,
                 })
                 .collect(),
         });
@@ -130,6 +140,8 @@ fn try_all_known_forms(text: &str) -> Option<WorkflowPlan> {
                 .map(|cmd| PlanStep {
                     cmd,
                     args: Vec::new(),
+                    input_from_step: None,
+                    timeout_secs: None,
                 })
                 .collect(),
         });

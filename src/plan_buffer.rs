@@ -169,6 +169,8 @@ mod tests {
             plan: vec![PlanStep {
                 cmd: "sort".to_string(),
                 args: vec!["-r".to_string()],
+                input_from_step: None,
+                timeout_secs: None,
             }],
         };
 

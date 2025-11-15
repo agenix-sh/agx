@@ -297,8 +297,8 @@ mod tests {
 
     #[test]
     fn parse_workers_list_without_json() {
-        let config = CliConfig::from_args(vec!["WORKERS".to_string(), "list".to_string()])
-            .expect("valid");
+        let config =
+            CliConfig::from_args(vec!["WORKERS".to_string(), "list".to_string()]).expect("valid");
 
         match config.command {
             Some(Command::Ops(OpsCommand::Workers { json })) => assert!(!json),
@@ -308,8 +308,11 @@ mod tests {
 
     #[test]
     fn parse_queue_stats_unknown_subcommand_errors() {
-        let res =
-            CliConfig::from_args(vec!["QUEUE".to_string(), "bad".to_string(), "--json".to_string()]);
+        let res = CliConfig::from_args(vec![
+            "QUEUE".to_string(),
+            "bad".to_string(),
+            "--json".to_string(),
+        ]);
         assert!(res.is_err());
     }
 }

@@ -49,32 +49,7 @@ impl AgqClient {
     }
 
     pub fn submit_plan(&self, plan_json: &str) -> Result<SubmissionResult, String> {
-        let stream =
-            TcpStream::connect(&self.config.addr).map_err(|e| format!("connect error: {e}"))?;
-        stream
-            .set_read_timeout(Some(self.config.timeout))
-            .map_err(|e| format!("failed to set read timeout: {e}"))?;
-        stream
-            .set_write_timeout(Some(self.config.timeout))
-            .map_err(|e| format!("failed to set write timeout: {e}"))?;
-
-        let mut reader = BufReader::new(stream);
-        if let Some(ref key) = self.config.session_key {
-            let auth = resp_array(&["AUTH", key]);
-            {
-                let stream = reader.get_mut();
-                stream
-                    .write_all(&auth)
-                    .map_err(|e| format!("failed to send AUTH: {e}"))?;
-            }
-
-            let auth_response = read_resp_value(&mut reader)?;
-            match auth_response {
-                RespValue::SimpleString(_) | RespValue::BulkString(_) => {}
-                RespValue::Error(msg) => return Err(format!("AUTH failed: {msg}")),
-                other => return Err(format!("unexpected AUTH response: {:?}", other)),
-            }
-        }
+        let mut reader = self.connect_and_auth()?;
 
         let submit = resp_array(&["PLAN.SUBMIT", plan_json]);
         {
