@@ -12,6 +12,10 @@ Transform natural-language user instructions into deterministic JSON workflow pl
 - `PLAN add "<instruction>"` – capture the instruction, run the configured planner backend, and append steps
 - `PLAN preview` – pretty-print / lint the in-progress plan
 - `PLAN submit` – send the finalized plan to AGQ via RESP with session-key auth and emit machine-readable status
+- Ops commands:
+  - `JOBS list [--json]`
+  - `WORKERS list [--json]`
+  - `QUEUE stats [--json]`
 
 ### Input Context
 - Natural-language instructions

@@ -38,6 +38,7 @@ pub fn run() -> Result<(), String> {
 
     match command {
         cli::Command::Plan(plan_command) => handle_plan_command(plan_command),
+        cli::Command::Ops(ops_command) => handle_ops_command(ops_command),
     }
 }
 
@@ -162,6 +163,49 @@ fn enforce_instruction_limit(command: &cli::PlanCommand) -> Result<(), String> {
                 instruction.len(),
                 MAX_INSTRUCTION_BYTES
             ));
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_ops_command(command: cli::OpsCommand) -> Result<(), String> {
+    let agq_config = agq_client::AgqConfig::from_env();
+    let client = agq_client::AgqClient::new(agq_config);
+
+    let (resp, json_output) = match command {
+        cli::OpsCommand::Jobs { json } => (client.list_jobs()?, json),
+        cli::OpsCommand::Workers { json } => (client.list_workers()?, json),
+        cli::OpsCommand::Queue { json } => (client.queue_stats()?, json),
+    };
+
+    if json_output {
+        print_json(match resp {
+            agq_client::OpsResponse::Jobs(items)
+            | agq_client::OpsResponse::Workers(items)
+            | agq_client::OpsResponse::QueueStats(items) => json!({"status": "ok", "items": items}),
+        });
+        return Ok(());
+    }
+
+    match resp {
+        agq_client::OpsResponse::Jobs(items) => {
+            println!("JOBS:");
+            for item in items {
+                println!("- {item}");
+            }
+        }
+        agq_client::OpsResponse::Workers(items) => {
+            println!("WORKERS:");
+            for item in items {
+                println!("- {item}");
+            }
+        }
+        agq_client::OpsResponse::QueueStats(items) => {
+            println!("QUEUE:");
+            for item in items {
+                println!("- {item}");
+            }
         }
     }
 

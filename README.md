@@ -56,6 +56,16 @@ Phase 1 introduces a `PLAN` REPL-style workflow:
 
 On success, the CLI prints JSON including the `job_id` and writes metadata alongside the plan buffer for future Ops commands.
 
+## Ops mode
+
+Use Ops commands to inspect AGQ without leaving the CLI:
+
+- `JOBS list [--json]`
+- `WORKERS list [--json]`
+- `QUEUE stats [--json]`
+
+These reuse the same AGQ configuration as PLAN submit. Add `--json` for machine-readable output; otherwise, a simple list is printed.
+
 ## Examples
 
 ```bash

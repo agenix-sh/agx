@@ -36,6 +36,13 @@ pub struct SubmissionResult {
     pub submitted_at: SystemTime,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum OpsResponse {
+    Jobs(Vec<String>),
+    Workers(Vec<String>),
+    QueueStats(Vec<String>),
+}
+
 impl AgqClient {
     pub fn new(config: AgqConfig) -> Self {
         Self { config }
@@ -87,6 +94,82 @@ impl AgqClient {
             RespValue::Error(msg) => Err(format!("AGQ error: {msg}")),
             other => Err(format!("unexpected AGQ response: {:?}", other)),
         }
+    }
+
+    pub fn list_jobs(&self) -> Result<OpsResponse, String> {
+        self.simple_query("JOBS.LIST", OpsResponse::Jobs)
+    }
+
+    pub fn list_workers(&self) -> Result<OpsResponse, String> {
+        self.simple_query("WORKERS.LIST", OpsResponse::Workers)
+    }
+
+    pub fn queue_stats(&self) -> Result<OpsResponse, String> {
+        self.simple_query("QUEUE.STATS", OpsResponse::QueueStats)
+    }
+
+    fn simple_query<F>(&self, command: &str, wrap: F) -> Result<OpsResponse, String>
+    where
+        F: Fn(Vec<String>) -> OpsResponse,
+    {
+        let mut reader = self.connect_and_auth()?;
+        let command_resp = resp_array(&[command]);
+        {
+            let stream = reader.get_mut();
+            stream
+                .write_all(&command_resp)
+                .map_err(|e| format!("failed to send {command}: {e}"))?;
+        }
+
+        let response = read_resp_value(&mut reader)?;
+        match response {
+            RespValue::Array(items) => {
+                let strings = items
+                    .into_iter()
+                    .filter_map(|v| match v {
+                        RespValue::SimpleString(s) | RespValue::BulkString(s) => Some(s),
+                        RespValue::Integer(i) => Some(i.to_string()),
+                        _ => None,
+                    })
+                    .collect();
+                Ok(wrap(strings))
+            }
+            RespValue::Error(msg) => Err(format!("AGQ error: {msg}")),
+            RespValue::SimpleString(s) | RespValue::BulkString(s) => Ok(wrap(vec![s])),
+            other => Err(format!("unexpected AGQ response: {:?}", other)),
+        }
+    }
+
+    fn connect_and_auth(&self) -> Result<BufReader<TcpStream>, String> {
+        let stream =
+            TcpStream::connect(&self.config.addr).map_err(|e| format!("connect error: {e}"))?;
+        stream
+            .set_read_timeout(Some(self.config.timeout))
+            .map_err(|e| format!("failed to set read timeout: {e}"))?;
+        stream
+            .set_write_timeout(Some(self.config.timeout))
+            .map_err(|e| format!("failed to set write timeout: {e}"))?;
+
+        let mut reader = BufReader::new(stream);
+
+        if let Some(ref key) = self.config.session_key {
+            let auth = resp_array(&["AUTH", key]);
+            {
+                let stream = reader.get_mut();
+                stream
+                    .write_all(&auth)
+                    .map_err(|e| format!("failed to send AUTH: {e}"))?;
+            }
+
+            let auth_response = read_resp_value(&mut reader)?;
+            match auth_response {
+                RespValue::SimpleString(_) | RespValue::BulkString(_) => {}
+                RespValue::Error(msg) => return Err(format!("AUTH failed: {msg}")),
+                other => return Err(format!("unexpected AUTH response: {:?}", other)),
+            }
+        }
+
+        Ok(reader)
     }
 }
 

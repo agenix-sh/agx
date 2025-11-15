@@ -37,6 +37,10 @@ Deliverables:
   - `PLAN add "<instruction>"`  
   - `PLAN preview`  
   - `PLAN submit`  
+  - Ops Mode:
+    - `JOBS list`
+    - `WORKERS list`
+    - `QUEUE stats`
 - LLM integration for plan shaping  
 - JSON plan schema  
 - Ops-mode scaffolding:

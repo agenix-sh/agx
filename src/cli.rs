@@ -5,12 +5,20 @@ AGX - Agentic planner CLI (Phase 1)\n\
 \n\
 Usage:\n\
     agx [OPTIONS] PLAN <subcommand>\n\
+    agx [OPTIONS] JOBS list [--json]\n\
+    agx [OPTIONS] WORKERS list [--json]\n\
+    agx [OPTIONS] QUEUE stats [--json]\n\
 \n\
 PLAN subcommands:\n\
     PLAN new                 Reset the persisted plan buffer.\n\
     PLAN add \"<instruction>\"  Append planner-generated steps. Reads STDIN when piped.\n\
     PLAN preview             Pretty-print the current JSON plan buffer.\n\
-    PLAN submit              Validate the plan and prepare it for AGQ submission.\n\
+    PLAN submit              Validate the plan and submit to AGQ.\n\
+\n\
+Ops commands:\n\
+    JOBS list                List jobs from AGQ (add --json for machine output).\n\
+    WORKERS list             List workers and capabilities (add --json for machine output).\n\
+    QUEUE stats              Show queue statistics (add --json for machine output).\n\
 \n\
 Options:\n\
     -h, --help        Print this help text.\n\
@@ -23,11 +31,15 @@ Environment variables:\n\
     AGX_OLLAMA_MODEL  Ollama model to run when using the Ollama backend (default: phi3:mini).\n\
     AGX_MODEL_PATH    Filesystem path to a local model when using the embedded backend.\n\
     AGX_MODEL_ARCH    Architecture for embedded models (for example: llama).\n\
+    AGQ_ADDR          AGQ TCP address (default: 127.0.0.1:6380).\n\
+    AGQ_SESSION_KEY   Session key for AGQ (optional).\n\
+    AGQ_TIMEOUT_SECS  Network timeout in seconds (default: 5).\n\
 ";
 
 #[derive(Debug, Clone)]
 pub enum Command {
     Plan(PlanCommand),
+    Ops(OpsCommand),
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +50,12 @@ pub enum PlanCommand {
     Submit,
 }
 
+#[derive(Debug, Clone)]
+pub enum OpsCommand {
+    Jobs { json: bool },
+    Workers { json: bool },
+    Queue { json: bool },
+}
 pub struct CliConfig {
     pub command: Option<Command>,
     pub show_help: bool,
@@ -113,6 +131,7 @@ fn parse_command(tokens: &[String]) -> Result<Command, String> {
 
     match kind.as_str() {
         "PLAN" => parse_plan_command(&tokens[1..]),
+        "JOBS" | "WORKERS" | "QUEUE" => parse_ops_command(&tokens),
         _ => Err(format!(
             "unknown command: {}. Run `agx --help` for usage.",
             tokens[0]
@@ -173,6 +192,46 @@ fn parse_plan_command(tokens: &[String]) -> Result<Command, String> {
     }
 }
 
+fn parse_ops_command(tokens: &[String]) -> Result<Command, String> {
+    if tokens.is_empty() {
+        return Err("an Ops command is required (JOBS/WORKERS/QUEUE).".to_string());
+    }
+
+    let main = tokens[0].to_uppercase();
+    let mut json = false;
+    let mut sub_tokens = tokens[1..].to_vec();
+
+    if sub_tokens.contains(&"--json".to_string()) {
+        json = true;
+        sub_tokens.retain(|t| t != "--json");
+    }
+
+    match main.as_str() {
+        "JOBS" => {
+            if sub_tokens.get(0).map(|s| s.to_lowercase()) == Some("list".to_string()) {
+                Ok(Command::Ops(OpsCommand::Jobs { json }))
+            } else {
+                Err("JOBS requires subcommand: list".to_string())
+            }
+        }
+        "WORKERS" => {
+            if sub_tokens.get(0).map(|s| s.to_lowercase()) == Some("list".to_string()) {
+                Ok(Command::Ops(OpsCommand::Workers { json }))
+            } else {
+                Err("WORKERS requires subcommand: list".to_string())
+            }
+        }
+        "QUEUE" => {
+            if sub_tokens.get(0).map(|s| s.to_lowercase()) == Some("stats".to_string()) {
+                Ok(Command::Ops(OpsCommand::Queue { json }))
+            } else {
+                Err("QUEUE requires subcommand: stats".to_string())
+            }
+        }
+        _ => Err(format!("unknown Ops command: {}", tokens[0])),
+    }
+}
+
 pub fn print_help() {
     println!("{HELP_TEXT}");
 }
@@ -219,5 +278,38 @@ mod tests {
     fn plan_add_requires_instruction() {
         let result = CliConfig::from_args(vec!["PLAN".to_string(), "add".to_string()]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_jobs_list_with_json_flag() {
+        let config = CliConfig::from_args(vec![
+            "JOBS".to_string(),
+            "list".to_string(),
+            "--json".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Ops(OpsCommand::Jobs { json })) => assert!(json),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_workers_list_without_json() {
+        let config = CliConfig::from_args(vec!["WORKERS".to_string(), "list".to_string()])
+            .expect("valid");
+
+        match config.command {
+            Some(Command::Ops(OpsCommand::Workers { json })) => assert!(!json),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_queue_stats_unknown_subcommand_errors() {
+        let res =
+            CliConfig::from_args(vec!["QUEUE".to_string(), "bad".to_string(), "--json".to_string()]);
+        assert!(res.is_err());
     }
 }
