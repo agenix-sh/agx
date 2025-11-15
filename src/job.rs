@@ -1,18 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-use crate::plan::{PlanStep, WorkflowPlan};
+use crate::plan::WorkflowPlan;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobEnvelope {
     pub job_id: String,
     pub plan_id: String,
+    #[serde(default)]
+    pub plan_description: Option<String>,
     pub steps: Vec<JobStep>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobStep {
     pub step_number: u32,
-    pub tool: String,
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -28,17 +29,42 @@ pub enum EnvelopeValidationError {
     TooManySteps(usize),
     NonMonotonicSteps,
     BadInputReference(u32),
+    FirstStepNotOne(u32),
+}
+
+impl std::fmt::Display for EnvelopeValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EnvelopeValidationError::EmptySteps => write!(f, "plan contains no steps"),
+            EnvelopeValidationError::TooManySteps(count) => {
+                write!(f, "plan has too many steps ({count})")
+            }
+            EnvelopeValidationError::NonMonotonicSteps => {
+                write!(f, "step numbers must be contiguous starting at 1")
+            }
+            EnvelopeValidationError::BadInputReference(step) => {
+                write!(f, "input_from_step references invalid step {step}")
+            }
+            EnvelopeValidationError::FirstStepNotOne(n) => {
+                write!(f, "first step number must be 1 (found {n})")
+            }
+        }
+    }
 }
 
 impl JobEnvelope {
-    pub fn from_plan(plan: WorkflowPlan, job_id: String, plan_id: String) -> Self {
+    pub fn from_plan(
+        plan: WorkflowPlan,
+        job_id: String,
+        plan_id: String,
+        plan_description: Option<String>,
+    ) -> Self {
         let steps = plan
             .plan
             .into_iter()
             .enumerate()
             .map(|(idx, step)| JobStep {
                 step_number: (idx + 1) as u32,
-                tool: step.cmd.clone(),
                 command: step.cmd,
                 args: step.args,
                 input_from_step: step.input_from_step,
@@ -49,6 +75,7 @@ impl JobEnvelope {
         Self {
             job_id,
             plan_id,
+            plan_description,
             steps,
         }
     }
@@ -56,6 +83,12 @@ impl JobEnvelope {
     pub fn validate(&self, max_steps: usize) -> Result<(), EnvelopeValidationError> {
         if self.steps.is_empty() {
             return Err(EnvelopeValidationError::EmptySteps);
+        }
+
+        if self.steps[0].step_number != 1 {
+            return Err(EnvelopeValidationError::FirstStepNotOne(
+                self.steps[0].step_number,
+            ));
         }
 
         if self.steps.len() > max_steps {
@@ -85,6 +118,7 @@ impl JobEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plan::PlanStep;
 
     #[test]
     fn builds_envelope_with_step_numbers() {
@@ -105,7 +139,8 @@ mod tests {
             ],
         };
 
-        let env = JobEnvelope::from_plan(plan, "job-1".into(), "plan-1".into());
+        let env =
+            JobEnvelope::from_plan(plan, "job-1".into(), "plan-1".into(), Some("desc".into()));
         assert_eq!(env.steps.len(), 2);
         assert_eq!(env.steps[0].step_number, 1);
         assert_eq!(env.steps[1].step_number, 2);
@@ -118,10 +153,10 @@ mod tests {
         let env = JobEnvelope {
             job_id: "job".into(),
             plan_id: "plan".into(),
+            plan_description: None,
             steps: vec![
                 JobStep {
                     step_number: 1,
-                    tool: "t".into(),
                     command: "c".into(),
                     args: vec![],
                     input_from_step: None,
@@ -129,7 +164,6 @@ mod tests {
                 },
                 JobStep {
                     step_number: 3,
-                    tool: "t".into(),
                     command: "c".into(),
                     args: vec![],
                     input_from_step: None,
@@ -147,10 +181,10 @@ mod tests {
         let env = JobEnvelope {
             job_id: "job".into(),
             plan_id: "plan".into(),
+            plan_description: None,
             steps: vec![
                 JobStep {
                     step_number: 1,
-                    tool: "t".into(),
                     command: "c".into(),
                     args: vec![],
                     input_from_step: None,
@@ -158,7 +192,6 @@ mod tests {
                 },
                 JobStep {
                     step_number: 2,
-                    tool: "t".into(),
                     command: "c".into(),
                     args: vec![],
                     input_from_step: Some(5),

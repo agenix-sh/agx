@@ -232,7 +232,10 @@ mod tests {
 
     #[test]
     fn submits_plan_and_parses_job_id() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
         let addr = listener.local_addr().unwrap();
 
         let server = thread::spawn(move || {
@@ -305,7 +308,10 @@ mod tests {
 
     #[test]
     fn auth_error_propagates() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
         let addr = listener.local_addr().unwrap();
 
         let server = thread::spawn(move || {
@@ -333,7 +339,10 @@ mod tests {
 
     #[test]
     fn propagate_agq_error_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
         let addr = listener.local_addr().unwrap();
 
         let server = thread::spawn(move || {

@@ -118,6 +118,7 @@ AGX is a micro-AU with a clear contract:
 - Ops mode provides visibility into AGQ state.
 - AGQ + AGW guarantee deterministic execution.
 - The system can be embedded into larger AOA pipelines.
+- Job envelope schema is documented in `docs/JOB_SCHEMA.md` (includes job_id, plan_id, optional plan_description, and steps with input_from_step/timeout).
 
 ---
 

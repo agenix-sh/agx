@@ -66,6 +66,10 @@ Use Ops commands to inspect AGQ without leaving the CLI:
 
 These reuse the same AGQ configuration as PLAN submit. Add `--json` for machine-readable output; otherwise, a simple list is printed.
 
+## Job envelope schema
+
+PLAN submit now wraps the full plan into a job envelope so all steps run on a single worker. See `docs/JOB_SCHEMA.md` for the canonical JSON shape and validation rules (`job_id`, `plan_id`, optional `plan_description`, and `steps[...]` with `input_from_step` and `timeout_secs`).
+
 ## Examples
 
 ```bash
