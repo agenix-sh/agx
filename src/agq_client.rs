@@ -204,7 +204,10 @@ mod tests {
                 RespValue::Array(items) => {
                     assert_eq!(items.len(), 2);
                     assert_eq!(items[0], RespValue::BulkString("PLAN.SUBMIT".to_string()));
-                    assert_eq!(items[1], RespValue::BulkString("{\"plan\": []}".to_string()));
+                    assert_eq!(
+                        items[1],
+                        RespValue::BulkString("{\"plan\": []}".to_string())
+                    );
                 }
                 other => panic!("unexpected submit request: {:?}", other),
             }
@@ -266,6 +269,37 @@ mod tests {
 
         let result = client.submit_plan("{\"plan\": []}");
         assert!(matches!(result, Err(e) if e.contains("AUTH failed")));
+
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn propagate_agq_error_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
+
+            let _auth_req = read_resp_value(&mut reader).expect("read auth request");
+            reader.get_mut().write_all(b"+OK\r\n").expect("auth ok");
+
+            let _submit_req = read_resp_value(&mut reader).expect("read submit");
+            reader
+                .get_mut()
+                .write_all(b"-ERR invalid plan\r\n")
+                .expect("write error");
+        });
+
+        let client = AgqClient::new(AgqConfig {
+            addr: addr.to_string(),
+            session_key: Some("secret".to_string()),
+            timeout: Duration::from_secs(2),
+        });
+
+        let result = client.submit_plan("{\"plan\": []}");
+        assert!(matches!(result, Err(e) if e.contains("AGQ error")));
 
         server.join().unwrap();
     }

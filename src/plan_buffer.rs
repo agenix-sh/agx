@@ -200,6 +200,19 @@ mod tests {
 
         let contents = std::fs::read_to_string(meta_path).unwrap();
         assert!(contents.contains("job-123"));
-        fs::remove_file(path.as_os_str().to_string_lossy().to_string() + ".meta").unwrap();
+        fs::remove_file(path.with_extension("json.meta")).unwrap();
+    }
+
+    #[test]
+    fn metadata_errors_surface() {
+        let path = PathBuf::from("/root/forbidden/agx-plan.json");
+        let storage = PlanStorage::new(path);
+        let meta = PlanMetadata {
+            job_id: "job-err".to_string(),
+            submitted_at: "2025-11-15T00:00:00Z".to_string(),
+        };
+
+        let result = storage.save_submission_metadata(&meta);
+        assert!(result.is_err());
     }
 }
