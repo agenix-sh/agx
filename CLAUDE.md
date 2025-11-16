@@ -1,4 +1,4 @@
-# CLAUD.md - Claude AI Integration Guide for AGX
+# CLAUDE.md - Claude AI Integration Guide for AGX
 
 **Version:** 1.0
 **Last Updated:** 2025-11-16
@@ -186,7 +186,7 @@ AGX (`agx`) is a **Phase 1 Planner CLI** in the AGX/AGQ/AGW ecosystem. It transf
 ├── README.md                     # User documentation
 ├── AGENTS.md                     # Agent specs & workflows
 ├── EXAMPLES.md                   # Usage examples
-└── CLAUD.md                      # This file
+└── CLAUDE.md                     # This file
 ```
 
 ### File Organization Principles
@@ -1153,8 +1153,6 @@ cargo build --features embedded-backend
 - `issue-30-plan-cli`
 - `issue-31-agq-submit`
 
-**Current Branch:** `claude/create-claud-documentation-01Ur1Db5h4Suxkd26G7PgMub`
-
 ---
 
 ### 8.3 Commit Message Format
@@ -1791,10 +1789,10 @@ When contributing new code, ensure:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-11-16 | Initial CLAUD.md creation |
+| 1.0 | 2025-11-16 | Initial CLAUDE.md creation |
 
 ---
 
-**End of CLAUD.md**
+**End of CLAUDE.md**
 
 For questions or improvements to this guide, please open an issue at: https://github.com/agenix-sh/agx/issues
