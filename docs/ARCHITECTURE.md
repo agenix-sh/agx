@@ -70,23 +70,23 @@ A deterministic, inspectable execution description.
 ## 4. Detailed Component Architecture
 
 ### 4.1 `agx`: Planner
-- LLM-assisted REPL  
-- Generates JSON plans  
-- `PLAN new`, `PLAN refine`, `PLAN submit`  
-- Can operate in Ops Mode (query jobs/workers)
+- LLM-assisted planning (PLAN mode; future REPL)
+- Generates JSON plans and wraps them in a **job envelope** (`job_id`, `plan_id`, `steps[...]` with `input_from_step`, `timeout_secs`) per `docs/JOB_SCHEMA.md`
+- `plan.submit` sends the envelope to AGQ; future `action.submit` will fan out many Jobs over one Plan
+- Ops Mode (query jobs/workers/queue)
 
 ### 4.2 `agq`: Queue/Scheduler
 - Embedded HeroDB  
-- Plan acceptance  
-- Job storage  
+- Plan acceptance via job envelopes (`plan.submit`, future `action.submit`)  
+- Job storage and tracking  
 - Worker dispatch  
 - Failure handling and retries
 
 ### 4.3 `agw`: Worker
 - RESP client  
 - Heartbeats  
-- Executes Unix + agentic tools  
-- Stateless linear executor
+- Executes **Jobs** as ordered Tasks from the envelope (stdout piping via `input_from_step`)  
+- Halts on first failure, posts consolidated results to AGQ
 
 ### 4.4 Agent Tools
 - Separate binaries  
