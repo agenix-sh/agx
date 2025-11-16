@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, SystemTime};
@@ -41,6 +42,15 @@ pub enum OpsResponse {
     Jobs(Vec<String>),
     Workers(Vec<String>),
     QueueStats(Vec<String>),
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionEnvelope {
+    pub action_id: String,
+    pub plan_id: String,
+    pub plan_description: Option<String>,
+    pub jobs: Vec<String>,
 }
 
 impl AgqClient {
@@ -369,5 +379,23 @@ mod tests {
         assert!(matches!(result, Err(e) if e.contains("AGQ error")));
 
         server.join().unwrap();
+    }
+
+    #[test]
+    fn action_envelope_serializes() {
+        let action = ActionEnvelope {
+            action_id: "act-1".into(),
+            plan_id: "plan-1".into(),
+            plan_description: Some("desc".into()),
+            jobs: vec!["job-1".into(), "job-2".into()],
+        };
+
+        let json = serde_json::to_string(&action).expect("serialize action");
+        assert!(json.contains("act-1"));
+        assert!(json.contains("job-2"));
+
+        let back: ActionEnvelope = serde_json::from_str(&json).expect("deserialize action");
+        assert_eq!(back.jobs.len(), 2);
+        assert_eq!(back.plan_description.as_deref(), Some("desc"));
     }
 }

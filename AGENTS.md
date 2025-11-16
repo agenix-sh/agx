@@ -119,6 +119,7 @@ AGX is a micro-AU with a clear contract:
 - AGQ + AGW guarantee deterministic execution.
 - The system can be embedded into larger AOA pipelines.
 - Job envelope schema is documented in `docs/JOB_SCHEMA.md` (includes job_id, plan_id, optional plan_description, and steps with input_from_step/timeout).
+- Canonical terminology (Task, Plan, Job, Action, Workflow) is defined in `docs/EXECUTION-LAYERS.md`. AGX generates Plans and Actions; AGQ stores Plans and Jobs; AGW executes Tasks as part of Jobs.
 
 ---
 
