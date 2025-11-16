@@ -43,6 +43,14 @@ pub enum OpsResponse {
     QueueStats(Vec<String>),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionEnvelope {
+    pub action_id: String,
+    pub plan_id: String,
+    pub plan_description: Option<String>,
+    pub jobs: Vec<String>,
+}
+
 impl AgqClient {
     pub fn new(config: AgqConfig) -> Self {
         Self { config }
@@ -371,3 +379,4 @@ mod tests {
         server.join().unwrap();
     }
 }
+use serde::{Deserialize, Serialize};
