@@ -1,7 +1,7 @@
 # CLAUDE.md - Claude AI Integration Guide for AGX
 
 **Version:** 1.0
-**Last Updated:** 2025-11-16
+**Last Updated:** 2024-11-16
 **Purpose:** Comprehensive guide for Claude AI to understand, navigate, and contribute to the AGX codebase
 
 ---
@@ -146,7 +146,7 @@ AGX (`agx`) is a **Phase 1 Planner CLI** in the AGX/AGQ/AGW ecosystem. It transf
 ### Directory Layout
 
 ```
-/home/user/agx/
+agx/
 ├── src/                          # Core Rust source (12 modules)
 │   ├── main.rs                   # Entry point
 │   ├── lib.rs                    # Command router & orchestration
@@ -312,7 +312,7 @@ print_json(json!({
 }));
 ```
 
-**Location:** `/home/user/agx/src/lib.rs:14-241`
+**Location:** `src/lib.rs`
 
 ---
 
@@ -362,7 +362,7 @@ agx --debug PLAN add "remove duplicates"
 # CliConfig { debug: true, command: Plan(Add { instruction: "remove duplicates" }) }
 ```
 
-**Location:** `/home/user/agx/src/cli.rs`
+**Location:** `src/cli.rs`
 
 ---
 
@@ -440,7 +440,7 @@ let output = Command::new("ollama")
     .map_err(|error| format!("failed to run ollama: {error}"))?;
 ```
 
-**Location:** `/home/user/agx/src/planner.rs`
+**Location:** `src/planner.rs`
 
 ---
 
@@ -492,7 +492,7 @@ pub fn normalize_for_execution(&self) -> WorkflowPlan {
 }
 ```
 
-**Location:** `/home/user/agx/src/plan.rs`
+**Location:** `src/plan.rs`
 
 ---
 
@@ -537,7 +537,7 @@ impl PlanStorage {
 - Pretty-printed JSON for human readability
 - Atomic write (temp file + rename pattern can be added)
 
-**Location:** `/home/user/agx/src/plan_buffer.rs`
+**Location:** `src/plan_buffer.rs`
 
 ---
 
@@ -555,18 +555,19 @@ pub struct Tool {
     pub ok_exit_codes: &'static [i32],
 }
 
-pub struct ToolRegistry {
-    tools: Vec<Tool>,
-}
+pub struct ToolRegistry;
+
+// Tools are defined in a static array
+static TOOLS: &[Tool] = &[...];
 ```
 
 **Current Tools (Phase 1):**
-1. **sort** - Sort lines alphanumerically
-2. **uniq** - Remove duplicate adjacent lines
-3. **grep** - Filter lines matching pattern
-4. **cut** - Extract column ranges
-5. **tr** - Translate or delete characters
-6. **jq** - Process JSON
+1. **sort** - Sort lines of text.
+2. **uniq** - Remove duplicate lines.
+3. **grep** - Filter lines that match a pattern.
+4. **cut** - Extract fields or columns from lines.
+5. **tr** - Translate or delete characters in text.
+6. **jq** - Process JSON data.
 
 **Pattern Matching:**
 ```rust
@@ -586,7 +587,7 @@ pub fn describe_for_planner(&self) -> String {
 
 **Future:** Phase 2+ will add `agx-ocr`, `agx-summarise`, etc.
 
-**Location:** `/home/user/agx/src/registry.rs`
+**Location:** `src/registry.rs`
 
 ---
 
@@ -654,7 +655,7 @@ fn resp_array(items: &[&str]) -> Vec<u8> {
 5. Parse response
 6. Close connection
 
-**Location:** `/home/user/agx/src/agq_client.rs`
+**Location:** `src/agq_client.rs`
 
 ---
 
@@ -740,7 +741,7 @@ impl JobEnvelope {
 
 **See Also:** `docs/JOB_SCHEMA.md`
 
-**Location:** `/home/user/agx/src/job.rs`
+**Location:** `src/job.rs`
 
 ---
 
@@ -788,7 +789,7 @@ let input = if InputCollector::stdin_is_terminal() {
 };
 ```
 
-**Location:** `/home/user/agx/src/input.rs`
+**Location:** `src/input.rs`
 
 ---
 
@@ -817,7 +818,7 @@ pub fn execute_plan_local(
 
 **Production Note:** AGW workers handle production execution, not this module.
 
-**Location:** `/home/user/agx/src/executor.rs`
+**Location:** `src/executor.rs`
 
 ---
 
@@ -846,7 +847,7 @@ logging::info(&format!("instruction: {}", instruction));
 [agx] planner raw output: {"plan": [...]}
 ```
 
-**Location:** `/home/user/agx/src/logging.rs`
+**Location:** `src/logging.rs`
 
 ---
 
@@ -1311,33 +1312,30 @@ mod tests {
 
 **Steps:**
 
-1. Add tool definition:
+1. Add tool definition to the `TOOLS` static array:
 ```rust
-Tool {
-    id: "new-tool",
-    command: "new-tool",
-    description: "What the tool does",
-    patterns: &["intent1", "intent2", "intent3"],
-    ok_exit_codes: &[0],
-}
+static TOOLS: &[Tool] = &[
+    Tool {
+        id: "sort",
+        command: "sort",
+        description: "Sort lines of text.",
+        patterns: &["sort", "order", "alphabetize", "sort lines"],
+        ok_exit_codes: &[0],
+    },
+    // ... existing tools
+    Tool {
+        id: "new-tool",
+        command: "new-tool",
+        description: "What the tool does",
+        patterns: &["intent1", "intent2", "intent3"],
+        ok_exit_codes: &[0],
+    },
+];
 ```
 
-2. Append to `ToolRegistry::new()`:
-```rust
-pub fn new() -> Self {
-    Self {
-        tools: vec![
-            Tool { id: "sort", ... },
-            // ... existing tools
-            Tool { id: "new-tool", ... },
-        ],
-    }
-}
-```
+2. Write tests for pattern matching
 
-3. Write tests for pattern matching
-
-4. Update docs if needed
+3. Update docs if needed
 
 ---
 
@@ -1789,7 +1787,7 @@ When contributing new code, ensure:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-11-16 | Initial CLAUDE.md creation |
+| 1.0 | 2024-11-16 | Initial CLAUDE.md creation |
 
 ---
 
