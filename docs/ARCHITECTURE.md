@@ -28,6 +28,8 @@ The ecosystem consists of four conceptual components:
 3. **AGW** – Workers that execute plan steps  
 4. **AGX-* tools** – Single-responsibility agent tools (`agx-ocr`, etc.)
 
+For canonical execution layers (Task, Plan, Job, Action, Workflow), see `docs/EXECUTION-LAYERS.md`.
+
 Phase 1 binaries:
 
 - `agx`
