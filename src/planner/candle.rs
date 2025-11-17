@@ -295,7 +295,13 @@ impl CandleBackend {
     fn build_delta_prompt(&self, instruction: &str, context: &PlanContext) -> String {
         let tools = self.format_tool_list(&context.tool_registry);
         let existing_plan = if !context.existing_tasks.is_empty() {
-            serde_json::to_string(&context.existing_tasks).unwrap_or_default()
+            match serde_json::to_string(&context.existing_tasks) {
+                Ok(json) => json,
+                Err(e) => {
+                    log::warn!("Failed to serialize existing tasks for Delta prompt: {}", e);
+                    "[]".to_string()
+                }
+            }
         } else {
             "[]".to_string()
         };
