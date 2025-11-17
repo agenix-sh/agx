@@ -63,7 +63,7 @@ unset AGX_OLLAMA_MODEL
 # Use Echo model (fast planning) - CPU mode
 export AGX_BACKEND=candle
 export AGX_MODEL_ROLE=echo
-export AGX_ECHO_MODEL="$HOME/.agx/models/echo/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+export AGX_ECHO_MODEL="$HOME/.agx/models/echo/VibeThinker-1.5B.Q4_K_M.gguf"
 export AGX_DEVICE=cpu  # Required on macOS until Metal issue resolved
 
 echo "data" | ./target/release/agx plan add "process this"
@@ -246,7 +246,7 @@ export AGX_DEVICE=metal
 - Use larger models for better accuracy: `llama3:8b` (4.7GB)
 
 ### Candle
-- **Echo (fast)**: Qwen2.5-1.5B-Instruct-Q4_K_M - <2s latency (CPU ~30-60s), <2GB VRAM
+- **Echo (fast)**: VibeThinker-1.5B-Q4_K_M - <2s latency (CPU ~30-60s), <2GB VRAM
 - **Delta (thorough)**: Mistral-Nemo-Q4_K_M - <10s latency (CPU ~60-120s), <8GB VRAM
 - GPU highly recommended (50x+ faster than CPU)
 - **Note:** Metal (macOS GPU) currently unsupported for quantized models. Use CPU or CUDA.

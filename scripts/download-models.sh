@@ -36,9 +36,9 @@ log_error() {
 mkdir -p "$MODELS_DIR"
 log_info "Using models directory: $MODELS_DIR"
 
-# Echo model: Qwen2.5-1.5B-Instruct (fast, lightweight)
-ECHO_MODEL_NAME="qwen2.5-1.5b-instruct-q4_k_m.gguf"
-ECHO_MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/${ECHO_MODEL_NAME}"
+# Echo model: VibeThinker-1.5B (fast, reasoning-optimized)
+ECHO_MODEL_NAME="VibeThinker-1.5B.Q4_K_M.gguf"
+ECHO_MODEL_URL="https://huggingface.co/mradermacher/VibeThinker-1.5B-GGUF/resolve/main/${ECHO_MODEL_NAME}"
 
 # Echo model directory (model and tokenizer in same dir)
 ECHO_DIR="$MODELS_DIR/echo"
@@ -46,8 +46,8 @@ mkdir -p "$ECHO_DIR"
 
 # Echo paths
 ECHO_MODEL_PATH="$ECHO_DIR/$ECHO_MODEL_NAME"
-# Tokenizer comes from base model repo (not GGUF repo)
-ECHO_TOKENIZER_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/tokenizer.json"
+# Tokenizer comes from base VibeThinker model repo
+ECHO_TOKENIZER_URL="https://huggingface.co/WeiboAI/VibeThinker-1.5B/resolve/main/tokenizer.json"
 ECHO_TOKENIZER_PATH="$ECHO_DIR/tokenizer.json"
 
 # Delta model directory
@@ -95,7 +95,7 @@ download_file() {
 }
 
 # Download Echo model and tokenizer
-log_info "=== Echo Model (Qwen2.5-1.5B) ==="
+log_info "=== Echo Model (VibeThinker-1.5B) ==="
 download_file "$ECHO_MODEL_URL" "$ECHO_MODEL_PATH" "Echo model"
 download_file "$ECHO_TOKENIZER_URL" "$ECHO_TOKENIZER_PATH" "Echo tokenizer"
 

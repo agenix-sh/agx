@@ -61,8 +61,8 @@ pub struct GeneratedPlan {
 **Configuration:**
 ```bash
 export AGX_BACKEND=candle
-export AGX_ECHO_MODEL="/path/to/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-export AGX_DELTA_MODEL="/path/to/mistral-nemo-q4_k_m.gguf"
+export AGX_ECHO_MODEL="/path/to/VibeThinker-1.5B.Q4_K_M.gguf"
+export AGX_DELTA_MODEL="/path/to/Mistral-Nemo-Instruct-2407.Q4_K_M.gguf"
 export AGX_MODEL_ROLE=echo  # or "delta"
 
 # Optional GPU selection
@@ -290,7 +290,7 @@ println!("Generated {} tasks in {}ms",
 
 - **Candle**: https://github.com/huggingface/candle
 - **GGUF Format**: https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
-- **Qwen2.5**: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+- **VibeThinker**: https://huggingface.co/mradermacher/VibeThinker-1.5B-GGUF
 - **Mistral-Nemo**: https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407-GGUF
 - **Ollama**: https://ollama.com
 
