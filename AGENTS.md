@@ -161,3 +161,23 @@ This workflow is used to implement GitHub issues for the `agenix-sh/agx` reposit
 - **Issues**: `AGX-###: …` (e.g., `AGX-031: Wire PLAN submit to AGQ`). Tool-specific repos should follow the same pattern (for example, `AGX-OCR-00X` once those projects exist).
 - **Branches**: `issue-<number>-<slug>` using the GitHub issue number so automation can correlate (e.g., `issue-30-plan-cli` for AGX-030).
 - **Pull requests**: Title must match `AGX-###: …` exactly. The PR body should include `## Issue`, `## Security Review`, `## Testing` sections as enforced by PR Checks.
+
+---
+
+## 7. Shared Claude Code Skills & Agents
+
+This repository uses shared Claude Code configuration from the agenix repo (via git submodule at `agenix-shared/.claude/`):
+
+### Available Skills (Auto-Activated)
+- **agenix-architecture** - Enforces execution layer nomenclature (Task/Plan/Job/Action/Workflow)
+- **agenix-security** - OWASP Top 10, zero-trust principles, constant-time comparisons
+- **agenix-testing** - TDD practices, 80% coverage minimum, 100% for security-critical code
+- **rust-agenix-standards** - Rust error handling, async patterns, type safety idioms
+
+### Available Agents (Explicit Invocation)
+- **rust-engineer** - Deep Rust expertise for async, performance, safety
+- **security-auditor** - Vulnerability detection and prevention
+- **github-manager** - Issue/PR creation with proper templates and labels
+- **multi-repo-coordinator** - Cross-repository change coordination
+
+See `.claude/README.md` for detailed documentation on skill activation and agent usage.
