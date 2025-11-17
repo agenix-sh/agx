@@ -4,7 +4,7 @@
 
 AGX uses a **dual-model planning architecture** for optimal performance:
 
-- **Echo Model** (Default): Fast plan generation (<2s) using lightweight models
+- **Echo Model** (Default): Fast plan generation (<2s with GPU, ~30-60s CPU) using lightweight models
   - Best for: Quick iteration, initial planning, simple tasks
   - Models: VibeThinker-1.5B, Qwen2.5-1.5B, Phi3-mini
 
@@ -286,9 +286,13 @@ export AGX_DEVICE=metal
 - Use larger models for better accuracy: `llama3:8b` (4.7GB)
 
 ### Candle
-- **Echo (fast)**: VibeThinker-1.5B-Q4_K_M - <2s latency (CPU ~30-60s), <2GB VRAM
-- **Delta (thorough)**: Mistral-Nemo-Q4_K_M - <10s latency (CPU ~60-120s), <8GB VRAM
-- GPU highly recommended (50x+ faster than CPU)
+- **Echo (fast)**: VibeThinker-1.5B-Q4_K_M
+  - GPU: <2s latency, <2GB VRAM
+  - CPU: ~30-60s latency, <4GB RAM
+- **Delta (thorough)**: Mistral-Nemo-Q4_K_M
+  - GPU: <10s latency, <8GB VRAM
+  - CPU: ~60-120s latency, <16GB RAM
+- **GPU highly recommended** (50x+ faster than CPU)
 - **Note:** Metal (macOS GPU) currently unsupported for quantized models. Use CPU or CUDA.
 
 ## Documentation

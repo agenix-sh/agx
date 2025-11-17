@@ -265,6 +265,24 @@ impl CandleBackend {
         Ok(backend)
     }
 
+    /// Sanitize user input for safe inclusion in prompts
+    ///
+    /// Prevents prompt injection by:
+    /// - Limiting length to prevent token overflow
+    /// - Filtering to safe characters (alphanumeric, whitespace, basic punctuation)
+    /// - Removing control characters and special sequences
+    fn sanitize_input(input: &str, max_len: usize) -> String {
+        input
+            .chars()
+            .filter(|c| {
+                c.is_alphanumeric()
+                    || c.is_whitespace()
+                    || matches!(c, '.' | ',' | '!' | '?' | '-' | '_' | '/' | ':' | '(' | ')')
+            })
+            .take(max_len)
+            .collect()
+    }
+
     /// Build prompt based on model role (Echo vs Delta)
     fn build_prompt(&self, instruction: &str, context: &PlanContext) -> String {
         match self.config.model_role {
@@ -276,10 +294,13 @@ impl CandleBackend {
     /// Build Echo prompt (fast, streamlined)
     fn build_echo_prompt(&self, instruction: &str, context: &PlanContext) -> String {
         let tools = self.format_tool_list(&context.tool_registry);
-        let input_info = context
+
+        // Sanitize user input to prevent prompt injection
+        let safe_instruction = Self::sanitize_input(instruction, 1000);
+        let safe_input_info = context
             .input_summary
             .as_ref()
-            .map(|s| format!("\nInput: {}", s))
+            .map(|s| format!("\nInput: {}", Self::sanitize_input(s, 500)))
             .unwrap_or_default();
 
         format!(
@@ -287,7 +308,7 @@ impl CandleBackend {
              Available tools: {}\n\
              Instruction: {}{}\n\
              Output only valid JSON: {{\"plan\": [{{\"cmd\": \"tool-id\"}}, ...]}}",
-            tools, instruction, input_info
+            tools, safe_instruction, safe_input_info
         )
     }
 
@@ -306,6 +327,9 @@ impl CandleBackend {
             "[]".to_string()
         };
 
+        // Sanitize user input to prevent prompt injection
+        let safe_instruction = Self::sanitize_input(instruction, 1000);
+
         format!(
             "You are an expert task planner. Validate and refine this plan.\n\
              Original instruction: {}\n\
@@ -319,7 +343,7 @@ impl CandleBackend {
              4. Edge cases\n\
              \n\
              Output improved JSON plan: {{\"plan\": [{{\"cmd\": \"tool-id\", \"args\": [...]}}]}}",
-            instruction, existing_plan, tools
+            safe_instruction, existing_plan, tools
         )
     }
 
@@ -536,7 +560,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let existing_plan = serde_json::to_string(&context.existing_tasks).unwrap();
+        let existing_plan = serde_json::to_string(&context.existing_tasks)
+            .expect("Test fixture serialization should never fail");
 
         // Just verify the structure matches what we expect for Delta
         assert!(!context.existing_tasks.is_empty());
@@ -581,6 +606,7 @@ mod tests {
         // Create a temp file for model (won't be a valid GGUF but tests path checking)
         let temp_dir = std::env::temp_dir();
         let model_path = temp_dir.join("test_model_missing_tok.gguf");
+        // Safe to unwrap in test - we're writing to temp directory
         std::fs::write(&model_path, b"fake model").unwrap();
 
         let config = CandleConfig {
@@ -611,6 +637,7 @@ mod tests {
         std::env::set_var("AGX_ECHO_MODEL", "/tmp/test.gguf");
         std::env::set_var("AGX_CANDLE_SEED", "12345");
 
+        // Safe to unwrap in test - we just set the env var above
         let config = CandleConfig::from_env(ModelRole::Echo).unwrap();
         assert_eq!(config.seed, Some(12345));
 
@@ -623,6 +650,7 @@ mod tests {
         std::env::set_var("AGX_ECHO_MODEL", "/tmp/test.gguf");
         std::env::set_var("AGX_CANDLE_CONTEXT_SIZE", "4096");
 
+        // Safe to unwrap in test - we just set the env var above
         let config = CandleConfig::from_env(ModelRole::Echo).unwrap();
         assert_eq!(config.context_size, 4096);
 
