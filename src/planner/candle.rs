@@ -508,6 +508,185 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_sanitize_input_removes_control_characters() {
+        // Whitespace characters (including \n, \r, \t) are allowed by is_whitespace()
+        assert_eq!(
+            CandleBackend::sanitize_input("foo\nbar\r\nbaz", 100),
+            "foo\nbar\r\nbaz"
+        );
+
+        // Test null bytes and other control characters (not whitespace)
+        assert_eq!(
+            CandleBackend::sanitize_input("hello\x00world\x1F", 100),
+            "helloworld"
+        );
+
+        // Tab characters are whitespace and allowed
+        assert_eq!(
+            CandleBackend::sanitize_input("hello\tworld", 100),
+            "hello\tworld"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_input_removes_special_sequences() {
+        // Test common injection sequences
+        assert_eq!(
+            CandleBackend::sanitize_input("foo${cmd}bar", 100),
+            "foocmdbar"
+        );
+
+        // Test backticks (command substitution)
+        assert_eq!(
+            CandleBackend::sanitize_input("hello`whoami`world", 100),
+            "hellowhoamiworld"
+        );
+
+        // Test semicolons (command chaining)
+        assert_eq!(
+            CandleBackend::sanitize_input("cmd1; cmd2", 100),
+            "cmd1 cmd2"
+        );
+
+        // Test pipe characters
+        assert_eq!(
+            CandleBackend::sanitize_input("data | filter", 100),
+            "data  filter"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_input_length_limiting() {
+        // Test exact length
+        let input = "a".repeat(1000);
+        assert_eq!(
+            CandleBackend::sanitize_input(&input, 1000).len(),
+            1000
+        );
+
+        // Test over length
+        let long_input = "a".repeat(2000);
+        assert_eq!(
+            CandleBackend::sanitize_input(&long_input, 1000).len(),
+            1000
+        );
+
+        // Test under length
+        let short_input = "hello";
+        assert_eq!(
+            CandleBackend::sanitize_input(short_input, 1000),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_input_preserves_allowed_characters() {
+        // Test alphanumeric
+        assert_eq!(
+            CandleBackend::sanitize_input("abc123XYZ", 100),
+            "abc123XYZ"
+        );
+
+        // Test whitespace
+        assert_eq!(
+            CandleBackend::sanitize_input("hello world  test", 100),
+            "hello world  test"
+        );
+
+        // Test allowed punctuation
+        assert_eq!(
+            CandleBackend::sanitize_input("hello-world.txt", 100),
+            "hello-world.txt"
+        );
+
+        assert_eq!(
+            CandleBackend::sanitize_input("What? Yes! (maybe)", 100),
+            "What? Yes! (maybe)"
+        );
+
+        // Test file paths with allowed characters
+        assert_eq!(
+            CandleBackend::sanitize_input("/path/to/file.txt", 100),
+            "/path/to/file.txt"
+        );
+
+        // Test colons (for timestamps, URLs)
+        assert_eq!(
+            CandleBackend::sanitize_input("time:12:30", 100),
+            "time:12:30"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_input_edge_cases() {
+        // Empty string
+        assert_eq!(
+            CandleBackend::sanitize_input("", 100),
+            ""
+        );
+
+        // Only whitespace
+        assert_eq!(
+            CandleBackend::sanitize_input("   ", 100),
+            "   "
+        );
+
+        // Zero length limit
+        assert_eq!(
+            CandleBackend::sanitize_input("hello", 0),
+            ""
+        );
+
+        // Only special characters
+        assert_eq!(
+            CandleBackend::sanitize_input("$$$%%%^^^", 100),
+            ""
+        );
+
+        // Mixed safe and unsafe
+        assert_eq!(
+            CandleBackend::sanitize_input("hello$world#test", 100),
+            "helloworldtest"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_input_unicode_handling() {
+        // Unicode alphanumeric characters (like Chinese) are allowed by is_alphanumeric()
+        assert_eq!(
+            CandleBackend::sanitize_input("hello 世界 world", 100),
+            "hello 世界 world"
+        );
+
+        // Emoji are not alphanumeric and get removed
+        assert_eq!(
+            CandleBackend::sanitize_input("test 🚀 emoji", 100),
+            "test  emoji"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_input_realistic_prompts() {
+        // Realistic user instruction
+        assert_eq!(
+            CandleBackend::sanitize_input("Find all .txt files in the current directory", 100),
+            "Find all .txt files in the current directory"
+        );
+
+        // File path instruction
+        assert_eq!(
+            CandleBackend::sanitize_input("Process file: /home/user/data.csv", 100),
+            "Process file: /home/user/data.csv"
+        );
+
+        // Instruction with parentheses
+        assert_eq!(
+            CandleBackend::sanitize_input("Count lines (excluding comments)", 100),
+            "Count lines (excluding comments)"
+        );
+    }
+
+    #[test]
     fn test_echo_prompt_structure() {
         let config = CandleConfig {
             model_role: ModelRole::Echo,
