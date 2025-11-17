@@ -6,6 +6,8 @@
 
 AGX (`agx`) is the Phase 1 planner CLI in the AGX/AGQ/AGW ecosystem. It shapes natural-language instructions into deterministic JSON plans, persists them locally, and prepares them for submission to the AGQ queue where AGW workers execute each step.
 
+**For comprehensive architecture documentation, see the [AGEniX central repository](https://github.com/agenix-sh/agenix).**
+
 ## Installing
 
 Once DNS is configured for `agenix.sh`, you will be able to install or update AGX with:
