@@ -17,6 +17,10 @@ impl ToolRegistry {
         TOOLS
     }
 
+    pub fn list_tools(&self) -> &'static [Tool] {
+        self.tools()
+    }
+
     pub fn find_by_id(&self, id: &str) -> Option<&'static Tool> {
         self.tools().iter().find(|tool| tool.id == id)
     }

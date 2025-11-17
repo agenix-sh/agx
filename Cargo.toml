@@ -5,7 +5,11 @@ edition = "2021"
 rust-version = "1.82"
 
 [features]
+default = ["metal"]
 embedded-backend = ["llm", "rand"]
+metal = ["candle-core/metal"]
+cuda = ["candle-core/cuda"]
+accelerate = ["candle-core/accelerate"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -14,6 +18,17 @@ llm = { version = "0.1", default-features = false, optional = true }
 rand = { version = "0.8", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+log = "0.4"
+
+# Candle dependencies for local LLM inference
+candle-core = { version = "0.9", default-features = false }
+candle-transformers = "0.9"
+candle-nn = "0.9"
+tokenizers = "0.22"
 
 [profile.dev.package.ggml-sys]
 opt-level = 3
