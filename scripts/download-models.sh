@@ -39,20 +39,28 @@ log_info "Using models directory: $MODELS_DIR"
 # Echo model: Qwen2.5-1.5B-Instruct (fast, lightweight)
 ECHO_MODEL_NAME="qwen2.5-1.5b-instruct-q4_k_m.gguf"
 ECHO_MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/${ECHO_MODEL_NAME}"
-ECHO_MODEL_PATH="$MODELS_DIR/$ECHO_MODEL_NAME"
 
-# Echo tokenizer
+# Echo model directory (model and tokenizer in same dir)
+ECHO_DIR="$MODELS_DIR/echo"
+mkdir -p "$ECHO_DIR"
+
+# Echo paths
+ECHO_MODEL_PATH="$ECHO_DIR/$ECHO_MODEL_NAME"
 ECHO_TOKENIZER_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/tokenizer.json"
-ECHO_TOKENIZER_PATH="$MODELS_DIR/tokenizer.json"
+ECHO_TOKENIZER_PATH="$ECHO_DIR/tokenizer.json"
+
+# Delta model directory
+DELTA_DIR="$MODELS_DIR/delta"
+mkdir -p "$DELTA_DIR"
 
 # Delta model: Mistral-Nemo (thorough, larger)
 DELTA_MODEL_NAME="Mistral-Nemo-Instruct-2407.Q4_K_M.gguf"
 DELTA_MODEL_URL="https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407-GGUF/resolve/main/${DELTA_MODEL_NAME}"
-DELTA_MODEL_PATH="$MODELS_DIR/$DELTA_MODEL_NAME"
+DELTA_MODEL_PATH="$DELTA_DIR/$DELTA_MODEL_NAME"
 
 # Delta tokenizer
 DELTA_TOKENIZER_URL="https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407-GGUF/resolve/main/tokenizer.json"
-DELTA_TOKENIZER_PATH="$MODELS_DIR/mistral-tokenizer.json"
+DELTA_TOKENIZER_PATH="$DELTA_DIR/tokenizer.json"
 
 download_file() {
     local url=$1
@@ -116,7 +124,10 @@ echo "Or add to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
 echo ""
 echo "  export AGX_MODELS_DIR=\"$MODELS_DIR\""
 echo "  export AGX_BACKEND=candle"
-echo "  export AGX_ECHO_MODEL=\"\$AGX_MODELS_DIR/$ECHO_MODEL_NAME\""
-echo "  export AGX_DELTA_MODEL=\"\$AGX_MODELS_DIR/$DELTA_MODEL_NAME\""
+echo "  export AGX_ECHO_MODEL=\"\$AGX_MODELS_DIR/echo/$ECHO_MODEL_NAME\""
+echo "  export AGX_DELTA_MODEL=\"\$AGX_MODELS_DIR/delta/$DELTA_MODEL_NAME\""
+echo ""
+echo "Note: Tokenizers are automatically loaded from tokenizer.json"
+echo "      in the same directory as each model."
 echo ""
 log_info "Models ready for use!"

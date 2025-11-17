@@ -69,16 +69,21 @@ impl Planner {
     ///
     /// Note: This is a blocking constructor that may perform I/O
     /// For async construction, use `new_async`
+    ///
+    /// # Panics
+    /// Panics if backend initialization fails (use `new_async` for error handling)
     pub fn new(config: PlannerConfig) -> Self {
         // Use tokio runtime to block on async initialization
         let runtime = tokio::runtime::Runtime::new()
             .expect("Failed to create tokio runtime for Planner initialization");
 
-        runtime.block_on(async { Self::new_async(config).await })
+        runtime
+            .block_on(async { Self::new_async(config).await })
+            .expect("Failed to initialize planner backend")
     }
 
     /// Create a new planner asynchronously
-    pub async fn new_async(config: PlannerConfig) -> Self {
+    pub async fn new_async(config: PlannerConfig) -> Result<Self, ModelError> {
         let backend: Arc<dyn ModelBackend> = match config.backend {
             BackendKind::Ollama => {
                 let ollama_config = OllamaConfig::default();
@@ -91,18 +96,13 @@ impl Planner {
                     _ => ModelRole::Echo,
                 };
 
-                let candle_config = CandleConfig::from_env(role).unwrap_or_else(|e| {
-                    panic!("Failed to configure Candle backend: {}", e);
-                });
-
-                match CandleBackend::new(candle_config).await {
-                    Ok(backend) => Arc::new(backend),
-                    Err(e) => panic!("Failed to initialize Candle backend: {}", e),
-                }
+                let candle_config = CandleConfig::from_env(role)?;
+                let backend = CandleBackend::new(candle_config).await?;
+                Arc::new(backend)
             }
         };
 
-        Self { backend }
+        Ok(Self { backend })
     }
 
     /// Generate a plan from an instruction (backward-compatible sync API)
@@ -112,11 +112,16 @@ impl Planner {
         input: &InputSummary,
         registry: &ToolRegistry,
     ) -> Result<PlannerOutput, String> {
-        // Use tokio runtime to block on async plan generation
-        let runtime = tokio::runtime::Runtime::new()
-            .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
-
-        runtime.block_on(async { self.plan_async(instruction, input, registry).await })
+        // Try to use existing runtime, otherwise create new one
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // We're already in a tokio runtime, use it
+            handle.block_on(async { self.plan_async(instruction, input, registry).await })
+        } else {
+            // No runtime exists, create one
+            let runtime = tokio::runtime::Runtime::new()
+                .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+            runtime.block_on(async { self.plan_async(instruction, input, registry).await })
+        }
     }
 
     /// Generate a plan asynchronously

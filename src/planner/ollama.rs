@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 
@@ -90,8 +90,16 @@ impl ModelBackend for OllamaBackend {
         let prompt = self.build_prompt(instruction, context);
         let model = self.model.clone();
 
-        // Run ollama in a blocking task
-        let (response, latency_ms) = tokio::task::spawn_blocking(move || {
+        // Timeout for Ollama calls (default 5 minutes)
+        let timeout_secs = std::env::var("AGX_OLLAMA_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(300);
+
+        // Run ollama in a blocking task with timeout
+        let (response, latency_ms) = tokio::time::timeout(
+            Duration::from_secs(timeout_secs),
+            tokio::task::spawn_blocking(move || {
             let start = Instant::now();
 
             let output = std::process::Command::new("ollama")
@@ -119,8 +127,15 @@ impl ModelBackend for OllamaBackend {
             let latency_ms = start.elapsed().as_millis() as u64;
 
             Ok::<_, ModelError>((text.trim().to_string(), latency_ms))
-        })
+        }),
+        )
         .await
+        .map_err(|_| {
+            ModelError::InferenceError(format!(
+                "Ollama call timed out after {} seconds",
+                timeout_secs
+            ))
+        })?
         .map_err(|e| ModelError::InferenceError(format!("Task join error: {}", e)))??;
 
         // Parse the response

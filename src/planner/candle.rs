@@ -27,6 +27,10 @@ pub struct CandleConfig {
     pub repeat_penalty: f32,
     /// Model role (echo or delta) for prompt selection
     pub model_role: ModelRole,
+    /// RNG seed for reproducible generation (None = random)
+    pub seed: Option<u64>,
+    /// Context window size for token generation
+    pub context_size: usize,
 }
 
 /// Model role determines prompt style
@@ -47,6 +51,8 @@ impl Default for CandleConfig {
             max_tokens: 2048,
             repeat_penalty: 1.1,
             model_role: ModelRole::Echo,
+            seed: None, // Random seed by default
+            context_size: 2048,
         }
     }
 }
@@ -94,6 +100,15 @@ impl CandleConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(2048);
 
+        let seed = std::env::var("AGX_CANDLE_SEED")
+            .ok()
+            .and_then(|s| s.parse().ok());
+
+        let context_size = std::env::var("AGX_CANDLE_CONTEXT_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2048);
+
         Ok(Self {
             model_path,
             temperature,
@@ -101,6 +116,8 @@ impl CandleConfig {
             max_tokens,
             repeat_penalty: 1.1,
             model_role: role,
+            seed,
+            context_size,
         })
     }
 
@@ -249,8 +266,17 @@ impl CandleBackend {
     fn generate_tokens(&self, input_tokens: &[u32]) -> Result<Vec<u32>, ModelError> {
         use candle_transformers::generation::LogitsProcessor;
 
+        // Use configured seed or generate random one
+        let seed = self.config.seed.unwrap_or_else(|| {
+            use std::collections::hash_map::RandomState;
+            use std::hash::{BuildHasher, Hash, Hasher};
+            let mut hasher = RandomState::new().build_hasher();
+            std::time::SystemTime::now().hash(&mut hasher);
+            hasher.finish()
+        });
+
         let mut logits_processor = LogitsProcessor::new(
-            299792458, // Seed (speed of light in m/s, deterministic but arbitrary)
+            seed,
             Some(self.config.temperature),
             Some(self.config.top_p),
         );
@@ -265,8 +291,8 @@ impl CandleBackend {
 
         // Generate tokens one by one
         for _ in 0..self.config.max_tokens {
-            let context_size = if tokens.len() > 2048 {
-                2048
+            let context_size = if tokens.len() > self.config.context_size {
+                self.config.context_size
             } else {
                 tokens.len()
             };
@@ -289,11 +315,15 @@ impl CandleBackend {
                 break;
             }
 
-            // Early stopping if we see JSON closing
-            if let Ok(text) = self.tokenizer.decode(&generated_tokens, true) {
-                if text.contains("}") && text.matches('{').count() == text.matches('}').count() {
-                    // Balanced braces, likely complete JSON
-                    break;
+            // Early stopping if we can parse valid JSON
+            // Check every 10 tokens to avoid too much overhead
+            if generated_tokens.len() % 10 == 0 {
+                if let Ok(text) = self.tokenizer.decode(&generated_tokens, true) {
+                    // Try to parse as JSON - if successful, we have a complete response
+                    if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+                        log::debug!("Valid JSON detected, stopping generation early");
+                        break;
+                    }
                 }
             }
         }
@@ -462,5 +492,69 @@ mod tests {
     fn test_model_role_enum() {
         assert_eq!(ModelRole::Echo, ModelRole::Echo);
         assert_ne!(ModelRole::Echo, ModelRole::Delta);
+    }
+
+    #[tokio::test]
+    async fn test_missing_model_file() {
+        let config = CandleConfig {
+            model_path: PathBuf::from("/nonexistent/model.gguf"),
+            ..Default::default()
+        };
+        let result = CandleBackend::new(config).await;
+        assert!(matches!(result, Err(ModelError::ConfigError(_))));
+    }
+
+    #[tokio::test]
+    async fn test_missing_tokenizer() {
+        // Create a temp file for model (won't be a valid GGUF but tests path checking)
+        let temp_dir = std::env::temp_dir();
+        let model_path = temp_dir.join("test_model_missing_tok.gguf");
+        std::fs::write(&model_path, b"fake model").unwrap();
+
+        let config = CandleConfig {
+            model_path: model_path.clone(),
+            ..Default::default()
+        };
+
+        let result = CandleBackend::new(config).await;
+        // Should fail because tokenizer.json doesn't exist
+        assert!(result.is_err());
+
+        // Cleanup
+        let _ = std::fs::remove_file(&model_path);
+    }
+
+    #[test]
+    fn test_config_from_env_missing_model() {
+        // Clear environment variables
+        std::env::remove_var("AGX_ECHO_MODEL");
+        std::env::remove_var("AGX_MODEL_PATH");
+
+        let result = CandleConfig::from_env(ModelRole::Echo);
+        assert!(matches!(result, Err(ModelError::ConfigError(_))));
+    }
+
+    #[test]
+    fn test_config_with_seed() {
+        std::env::set_var("AGX_ECHO_MODEL", "/tmp/test.gguf");
+        std::env::set_var("AGX_CANDLE_SEED", "12345");
+
+        let config = CandleConfig::from_env(ModelRole::Echo).unwrap();
+        assert_eq!(config.seed, Some(12345));
+
+        std::env::remove_var("AGX_ECHO_MODEL");
+        std::env::remove_var("AGX_CANDLE_SEED");
+    }
+
+    #[test]
+    fn test_config_with_context_size() {
+        std::env::set_var("AGX_ECHO_MODEL", "/tmp/test.gguf");
+        std::env::set_var("AGX_CANDLE_CONTEXT_SIZE", "4096");
+
+        let config = CandleConfig::from_env(ModelRole::Echo).unwrap();
+        assert_eq!(config.context_size, 4096);
+
+        std::env::remove_var("AGX_ECHO_MODEL");
+        std::env::remove_var("AGX_CANDLE_CONTEXT_SIZE");
     }
 }
