@@ -1,5 +1,19 @@
 # AGX Usage Guide
 
+## Overview
+
+AGX uses a **dual-model planning architecture** for optimal performance:
+
+- **Echo Model** (Default): Fast plan generation (<2s) using lightweight models
+  - Best for: Quick iteration, initial planning, simple tasks
+  - Models: VibeThinker-1.5B, Qwen2.5-1.5B, Phi3-mini
+
+- **Delta Model** (Optional): Thorough validation and refinement
+  - Best for: Complex plans, validation, optimization
+  - Models: Mistral-Nemo, larger Qwen models
+
+**Default behavior:** `plan add` uses Echo mode automatically - no configuration needed!
+
 ## Quick Start
 
 ### 1. Build AGX
@@ -80,13 +94,16 @@ echo "data" | ./target/release/agx plan add "validate and refine"
 
 ## Common Workflows
 
-### Planning Workflow
+### Basic Planning Workflow (Echo Mode - Fast)
+
+Echo mode is the **default** for `plan add` - optimized for speed and quick iteration:
 
 ```bash
 # 1. Create new plan
 ./target/release/agx plan new
 
-# 2. Add tasks (can be done multiple times)
+# 2. Add tasks using Echo (fast, <2s generation)
+# Echo mode is automatic - no configuration needed
 echo "file1.txt file2.txt" | ./target/release/agx plan add "sort these files"
 echo "data.csv" | ./target/release/agx plan add "count lines"
 
@@ -94,6 +111,26 @@ echo "data.csv" | ./target/release/agx plan add "count lines"
 ./target/release/agx plan preview
 
 # 4. Submit to AGQ for execution
+./target/release/agx plan submit
+```
+
+### Dual-Model Workflow (Echo + Delta)
+
+For complex plans, use Echo for initial generation and Delta for validation:
+
+```bash
+# 1. Generate initial plan with Echo (fast)
+./target/release/agx plan new
+echo "complex-data.csv" | ./target/release/agx plan add "analyze and report"
+
+# 2. Validate and refine with Delta (thorough)
+export AGX_MODEL_ROLE=delta
+export AGX_DELTA_MODEL="$HOME/.agx/models/delta/Mistral-Nemo-Instruct-2407.Q4_K_M.gguf"
+
+# Delta reviews the existing plan and suggests improvements
+./target/release/agx plan preview | ./target/release/agx plan add "validate and optimize"
+
+# 3. Submit refined plan
 ./target/release/agx plan submit
 ```
 
@@ -126,11 +163,14 @@ AGX_OLLAMA_MODEL=phi3:mini           # Model to use (default: phi3:mini)
 AGX_OLLAMA_TIMEOUT_SECS=300          # Timeout in seconds (default: 300)
 ```
 
-**Candle Configuration:**
+**Candle Configuration (Echo/Delta Models):**
 ```bash
-AGX_MODEL_ROLE=echo                  # echo (fast) or delta (thorough)
-AGX_ECHO_MODEL=/path/to/model.gguf   # Echo model path
-AGX_DELTA_MODEL=/path/to/model.gguf  # Delta model path
+# Model Role Selection
+AGX_MODEL_ROLE=echo                  # echo (fast, default) or delta (thorough)
+
+# Model Paths
+AGX_ECHO_MODEL=/path/to/model.gguf   # Echo model (fast planning, <2s)
+AGX_DELTA_MODEL=/path/to/model.gguf  # Delta model (validation, refinement)
 
 # Optional GPU settings
 AGX_DEVICE=cuda                      # Force CUDA
