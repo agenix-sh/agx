@@ -81,8 +81,13 @@ export AGX_CANDLE_MAX_TOKENS=2048
 ./scripts/download-models.sh
 ```
 
+**Supported Model Architectures:**
+- **Qwen2/Qwen2.5**: Automatic detection via `qwen2.attention.head_count` metadata
+- **LLaMA/Mistral**: Automatic detection via `llama.attention.head_count` metadata
+- Architecture is detected automatically from GGUF metadata
+
 **GPU Support:**
-- **macOS**: Metal (automatic on Apple Silicon)
+- **macOS**: ⚠️ Metal currently unsupported for quantized models (use CPU mode)
 - **Linux**: CUDA (requires CUDA 12.0+, compute capability 7.0+)
 - **Blackwell GPUs**: Supported (compute capability 10.x), verify with CUDA 12.0+
 - **Fallback**: CPU (slower but works everywhere)
@@ -228,10 +233,11 @@ planner.health_check().await?;
 - Verify GPU: `nvidia-smi`
 - Fallback to CPU: `export AGX_DEVICE=cpu`
 
-### "Failed to initialize Metal"
-- Metal only available on macOS
-- Check system: `system_profiler SPDisplaysDataType | grep Metal`
-- Fallback to CPU: `export AGX_DEVICE=cpu`
+### "Metal error: no metal implementation for rms-norm"
+- **Known Issue**: Metal backend lacks quantized RMS-norm support in Candle 0.9
+- **Workaround**: Use CPU mode on macOS: `export AGX_DEVICE=cpu`
+- **Alternative**: Use CUDA on Linux/Windows with NVIDIA GPU
+- **Tracking**: This is a Candle framework limitation, not AGX-specific
 
 ### Slow inference
 - Check device: CPU is 10-50x slower than GPU

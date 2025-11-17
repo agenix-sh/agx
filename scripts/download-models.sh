@@ -46,7 +46,8 @@ mkdir -p "$ECHO_DIR"
 
 # Echo paths
 ECHO_MODEL_PATH="$ECHO_DIR/$ECHO_MODEL_NAME"
-ECHO_TOKENIZER_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/tokenizer.json"
+# Tokenizer comes from base model repo (not GGUF repo)
+ECHO_TOKENIZER_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/tokenizer.json"
 ECHO_TOKENIZER_PATH="$ECHO_DIR/tokenizer.json"
 
 # Delta model directory

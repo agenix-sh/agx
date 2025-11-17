@@ -3,14 +3,64 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use candle_core::Device;
-use candle_transformers::models::quantized_llama::ModelWeights;
+use candle_core::{Device, Tensor};
+use candle_transformers::models::quantized_llama;
+use candle_transformers::models::quantized_qwen2;
 use tokenizers::Tokenizer;
 
 use super::backend::ModelBackend;
 use super::device::select_device_from_env;
 use super::types::{GeneratedPlan, ModelError, PlanContext, PlanMetadata, ToolInfo};
 use crate::plan::{PlanStep, WorkflowPlan};
+
+/// Unified model wrapper supporting multiple architectures
+enum ModelWeights {
+    Llama(quantized_llama::ModelWeights),
+    Qwen2(quantized_qwen2::ModelWeights),
+}
+
+impl ModelWeights {
+    /// Detect architecture from GGUF metadata and load appropriate model
+    fn from_gguf<R: std::io::Seek + std::io::Read>(
+        content: candle_core::quantized::gguf_file::Content,
+        reader: &mut R,
+        device: &Device,
+    ) -> Result<Self, ModelError> {
+        // Detect architecture by checking for architecture-specific metadata keys
+        let arch = if content.metadata.contains_key("qwen2.attention.head_count") {
+            "qwen2"
+        } else if content.metadata.contains_key("llama.attention.head_count") {
+            "llama"
+        } else {
+            return Err(ModelError::LoadError(
+                "Unknown model architecture. Expected 'llama' or 'qwen2' metadata keys."
+                    .to_string(),
+            ));
+        };
+
+        log::info!("Detected model architecture: {}", arch);
+
+        match arch {
+            "qwen2" => {
+                let model = quantized_qwen2::ModelWeights::from_gguf(content, reader, device)?;
+                Ok(ModelWeights::Qwen2(model))
+            }
+            "llama" => {
+                let model = quantized_llama::ModelWeights::from_gguf(content, reader, device)?;
+                Ok(ModelWeights::Llama(model))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Forward pass through the model
+    fn forward(&mut self, x: &Tensor, index_pos: usize) -> candle_core::Result<Tensor> {
+        match self {
+            ModelWeights::Llama(model) => model.forward(x, index_pos),
+            ModelWeights::Qwen2(model) => model.forward(x, index_pos),
+        }
+    }
+}
 
 /// Configuration for Candle backend
 #[derive(Debug, Clone)]
