@@ -115,9 +115,10 @@ async fn main() -> Result<()> {
 **Phase 1 (In Progress):**
 - ✅ Basic REPL interface
 - ✅ RESP protocol client
-- 🚧 Echo/Delta LLM integration (AGX-022, AGX-045, AGX-046)
-- 🚧 Candle backend for VibeThinker
-- ⏳ Model prompt templates
+- ✅ Model backend abstraction (AGX-022)
+- ✅ Qwen2/VibeThinker architecture support (AGX-049)
+- 🚧 Echo model prompts (AGX-045)
+- 🚧 Delta model prompts (AGX-046)
 
 **Blocked until Phase 1 complete:**
 - Agentic Units (AU) integration
