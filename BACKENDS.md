@@ -132,7 +132,9 @@ AGX uses two model roles for Echo-Delta planning:
 ### Echo (Fast Planning)
 - **Purpose**: Generate initial plans quickly
 - **Model**: qwen2.5-1.5b-instruct-q4_k_m.gguf (1.5B params)
-- **Latency**: < 2 seconds for 5-10 task plans
+- **Latency**:
+  - GPU: < 2 seconds for 5-10 task plans
+  - CPU: ~30-60 seconds for 5-10 task plans
 - **Memory**: < 2GB VRAM (GPU) or < 4GB RAM (CPU)
 - **Prompt**: Streamlined, focuses on speed
 
@@ -144,7 +146,9 @@ export AGX_ECHO_MODEL="$HOME/.agx/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
 ### Delta (Validation)
 - **Purpose**: Validate and refine plans
 - **Model**: Mistral-Nemo-Instruct-2407.Q4_K_M.gguf (12B params)
-- **Latency**: < 10 seconds for validation
+- **Latency**:
+  - GPU: < 10 seconds for validation
+  - CPU: ~60-120 seconds for validation
 - **Memory**: < 8GB VRAM (GPU) or < 16GB RAM (CPU)
 - **Prompt**: Comprehensive, validates dependencies, error handling, edge cases
 
@@ -182,14 +186,18 @@ Output improved JSON plan: {"plan": [{"cmd": "tool-id", "args": [...]}]}
 ## Performance Targets
 
 ### Echo Model (qwen2.5:1.5b)
-- **Latency**: < 2 seconds
+- **Latency**:
+  - GPU: < 2 seconds
+  - CPU: ~30-60 seconds
 - **Throughput**: 50+ tokens/second (GPU)
-- **Memory**: < 2GB VRAM
+- **Memory**: < 2GB VRAM (GPU) or < 4GB RAM (CPU)
 
 ### Delta Model (mistral-nemo)
-- **Latency**: < 10 seconds
+- **Latency**:
+  - GPU: < 10 seconds
+  - CPU: ~60-120 seconds
 - **Throughput**: 30+ tokens/second (GPU)
-- **Memory**: < 8GB VRAM
+- **Memory**: < 8GB VRAM (GPU) or < 16GB RAM (CPU)
 
 ## Testing
 
