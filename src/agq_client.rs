@@ -54,6 +54,21 @@ pub struct ActionEnvelope {
     pub job_ids: Vec<String>,
 }
 
+impl ActionEnvelope {
+    /// Validate that jobs_created matches job_ids length
+    /// Prevents silent failures from AGQ data inconsistencies
+    pub fn validate(&self) -> Result<(), String> {
+        if self.jobs_created != self.job_ids.len() {
+            return Err(format!(
+                "ActionEnvelope validation failed: jobs_created ({}) != job_ids.len() ({})",
+                self.jobs_created,
+                self.job_ids.len()
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl AgqClient {
     pub fn new(config: AgqConfig) -> Self {
         Self { config }
@@ -97,8 +112,10 @@ impl AgqClient {
 
         match response {
             RespValue::BulkString(s) => {
-                serde_json::from_str(&s)
-                    .map_err(|e| format!("failed to parse ACTION.SUBMIT response: {e}"))
+                let envelope: ActionEnvelope = serde_json::from_str(&s)
+                    .map_err(|e| format!("failed to parse ACTION.SUBMIT response: {e}"))?;
+                envelope.validate()?;
+                Ok(envelope)
             }
             RespValue::Error(msg) => Err(format!("AGQ error: {msg}")),
             other => Err(format!("unexpected AGQ response: {:?}", other)),
@@ -492,5 +509,28 @@ mod tests {
         assert_eq!(result.job_ids[1], "job-2");
 
         server.join().unwrap();
+    }
+
+    #[test]
+    fn action_envelope_validates_jobs_created_match() {
+        let valid_envelope = ActionEnvelope {
+            action_id: "act-1".into(),
+            plan_id: "plan-1".into(),
+            plan_description: None,
+            jobs_created: 2,
+            job_ids: vec!["job-1".into(), "job-2".into()],
+        };
+        assert!(valid_envelope.validate().is_ok());
+
+        let invalid_envelope = ActionEnvelope {
+            action_id: "act-1".into(),
+            plan_id: "plan-1".into(),
+            plan_description: None,
+            jobs_created: 3, // Mismatch!
+            job_ids: vec!["job-1".into(), "job-2".into()],
+        };
+        let result = invalid_envelope.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("jobs_created (3) != job_ids.len() (2)"));
     }
 }
