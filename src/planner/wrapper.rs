@@ -33,17 +33,40 @@ impl BackendKind {
             Err(_) => BackendKind::Ollama,
         }
     }
+
+    /// Create backend explicitly for Delta validation
+    /// Uses the same backend as environment, but forces Delta model role
+    pub fn for_delta() -> Result<Self, String> {
+        // Use the same backend selection logic as from_env
+        Ok(Self::from_env())
+    }
 }
 
 /// Planner configuration
 pub struct PlannerConfig {
     pub backend: BackendKind,
+    /// Optional model role override (for Delta validation)
+    /// If None, uses AGX_MODEL_ROLE environment variable
+    pub model_role_override: Option<ModelRole>,
 }
 
 impl PlannerConfig {
     pub fn from_env() -> Self {
         let backend = BackendKind::from_env();
-        Self { backend }
+        Self {
+            backend,
+            model_role_override: None,
+        }
+    }
+
+    /// Create config explicitly for Delta validation
+    /// This avoids environment variable mutation and is thread-safe
+    pub fn for_delta() -> Result<Self, String> {
+        let backend = BackendKind::for_delta()?;
+        Ok(Self {
+            backend,
+            model_role_override: Some(ModelRole::Delta),
+        })
     }
 }
 
@@ -90,10 +113,14 @@ impl Planner {
                 Arc::new(OllamaBackend::from_config(ollama_config))
             }
             BackendKind::Candle => {
-                // Determine model role from environment
-                let role = match std::env::var("AGX_MODEL_ROLE") {
-                    Ok(r) if r.eq_ignore_ascii_case("delta") => ModelRole::Delta,
-                    _ => ModelRole::Echo,
+                // Use override if provided, otherwise read from environment
+                let role = if let Some(override_role) = config.model_role_override {
+                    override_role
+                } else {
+                    match std::env::var("AGX_MODEL_ROLE") {
+                        Ok(r) if r.eq_ignore_ascii_case("delta") => ModelRole::Delta,
+                        _ => ModelRole::Echo,
+                    }
                 };
 
                 let candle_config = CandleConfig::from_env(role)?;

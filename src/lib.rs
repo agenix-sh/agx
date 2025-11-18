@@ -254,37 +254,30 @@ fn compute_plan_diff(
     })
 }
 
+/// Instruction used for Delta validation
+const DELTA_VALIDATION_INSTRUCTION: &str = "Validate and refine this plan";
+
 fn run_delta_validation(
     current_plan: &plan::WorkflowPlan,
     storage: &plan_buffer::PlanStorage,
 ) -> Result<plan::WorkflowPlan, String> {
-    // Force Delta mode by temporarily setting environment variable
-    let original_role = std::env::var("AGX_MODEL_ROLE").ok();
-    std::env::set_var("AGX_MODEL_ROLE", "delta");
-
-    // Create Delta planner
-    let planner_config = planner::PlannerConfig::from_env();
-    let planner = planner::Planner::new(planner_config);
+    // Create Delta planner with explicit ModelRole (no env var mutation)
+    let delta_config = planner::PlannerConfig::for_delta()
+        .map_err(|e| format!("Failed to create Delta config: {}", e))?;
+    let planner = planner::Planner::new(delta_config);
 
     // Get tool registry
     let registry = registry::ToolRegistry::new();
 
     // Run Delta validation with existing plan as context
-    let instruction = "Validate and refine this plan";
     let input = input::InputSummary::empty();
 
     let plan_output = planner.plan_with_existing(
-        instruction,
+        DELTA_VALIDATION_INSTRUCTION,
         &input,
         &registry,
         &current_plan.plan,
     )?;
-
-    // Restore original AGX_MODEL_ROLE
-    match original_role {
-        Some(role) => std::env::set_var("AGX_MODEL_ROLE", role),
-        None => std::env::remove_var("AGX_MODEL_ROLE"),
-    }
 
     logging::info(&format!("Delta validation output: {}", plan_output.raw_json));
 
