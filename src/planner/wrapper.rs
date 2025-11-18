@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::input::InputSummary;
-use crate::plan::WorkflowPlan;
+use crate::plan::{PlanStep, WorkflowPlan};
 use crate::registry::ToolRegistry;
 
 use super::backend::ModelBackend;
@@ -33,17 +33,40 @@ impl BackendKind {
             Err(_) => BackendKind::Ollama,
         }
     }
+
+    /// Create backend explicitly for Delta validation
+    /// Uses the same backend as environment, but forces Delta model role
+    pub fn for_delta() -> Result<Self, String> {
+        // Use the same backend selection logic as from_env
+        Ok(Self::from_env())
+    }
 }
 
 /// Planner configuration
 pub struct PlannerConfig {
     pub backend: BackendKind,
+    /// Optional model role override (for Delta validation)
+    /// If None, uses AGX_MODEL_ROLE environment variable
+    pub model_role_override: Option<ModelRole>,
 }
 
 impl PlannerConfig {
     pub fn from_env() -> Self {
         let backend = BackendKind::from_env();
-        Self { backend }
+        Self {
+            backend,
+            model_role_override: None,
+        }
+    }
+
+    /// Create config explicitly for Delta validation
+    /// This avoids environment variable mutation and is thread-safe
+    pub fn for_delta() -> Result<Self, String> {
+        let backend = BackendKind::for_delta()?;
+        Ok(Self {
+            backend,
+            model_role_override: Some(ModelRole::Delta),
+        })
     }
 }
 
@@ -90,10 +113,14 @@ impl Planner {
                 Arc::new(OllamaBackend::from_config(ollama_config))
             }
             BackendKind::Candle => {
-                // Determine model role from environment
-                let role = match std::env::var("AGX_MODEL_ROLE") {
-                    Ok(r) if r.eq_ignore_ascii_case("delta") => ModelRole::Delta,
-                    _ => ModelRole::Echo,
+                // Use override if provided, otherwise read from environment
+                let role = if let Some(override_role) = config.model_role_override {
+                    override_role
+                } else {
+                    match std::env::var("AGX_MODEL_ROLE") {
+                        Ok(r) if r.eq_ignore_ascii_case("delta") => ModelRole::Delta,
+                        _ => ModelRole::Echo,
+                    }
                 };
 
                 let candle_config = CandleConfig::from_env(role)?;
@@ -155,6 +182,80 @@ impl Planner {
         };
 
         // Generate plan using backend
+        let generated = self
+            .backend
+            .generate_plan(instruction, &context)
+            .await
+            .map_err(|e| format!("Backend error: {}", e))?;
+
+        // Convert back to legacy format (raw JSON)
+        let plan = WorkflowPlan {
+            plan: generated.tasks,
+        };
+
+        let raw_json =
+            serde_json::to_string(&plan).map_err(|e| format!("JSON serialization error: {}", e))?;
+
+        Ok(PlannerOutput { raw_json })
+    }
+
+    /// Plan with existing tasks (for Delta validation)
+    pub fn plan_with_existing(
+        &self,
+        instruction: &str,
+        input: &InputSummary,
+        registry: &ToolRegistry,
+        existing_tasks: &[PlanStep],
+    ) -> Result<PlannerOutput, String> {
+        // Try to use existing runtime, otherwise create new one
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.block_on(async {
+                self.plan_with_existing_async(instruction, input, registry, existing_tasks)
+                    .await
+            })
+        } else {
+            // Create new runtime
+            let runtime = tokio::runtime::Runtime::new()
+                .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+            runtime.block_on(async {
+                self.plan_with_existing_async(instruction, input, registry, existing_tasks)
+                    .await
+            })
+        }
+    }
+
+    /// Async version of plan_with_existing
+    async fn plan_with_existing_async(
+        &self,
+        instruction: &str,
+        input: &InputSummary,
+        registry: &ToolRegistry,
+        existing_tasks: &[PlanStep],
+    ) -> Result<PlannerOutput, String> {
+        // Build context from legacy types
+        let input_summary = if input.is_empty {
+            None
+        } else {
+            Some(format!(
+                "bytes: {}, lines: {}, binary: {}",
+                input.bytes, input.lines, input.is_probably_binary
+            ))
+        };
+
+        let tool_registry: Vec<ToolInfo> = registry
+            .list_tools()
+            .iter()
+            .map(|t| ToolInfo::new(t.id.clone(), t.description.clone()))
+            .collect();
+
+        let context = PlanContext {
+            tool_registry,
+            input_summary,
+            existing_tasks: existing_tasks.to_vec(),
+            max_tasks: 20,
+        };
+
+        // Generate plan using backend (will use Delta prompt if ModelRole::Delta)
         let generated = self
             .backend
             .generate_plan(instruction, &context)

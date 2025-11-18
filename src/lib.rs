@@ -58,6 +58,34 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                 "plan_steps": 0
             }));
         }
+        cli::PlanCommand::Validate => {
+            let plan = storage.load()?;
+
+            if plan.plan.is_empty() {
+                return Err("plan is empty. Use `PLAN add` to generate tasks first.".to_string());
+            }
+
+            logging::info(&format!(
+                "PLAN validate request with {} step(s)",
+                plan.plan.len()
+            ));
+
+            // Run Delta validation on current plan
+            let original_steps = plan.plan.len();
+            let validated_plan = run_delta_validation(&plan, &storage)?;
+            let validated_steps = validated_plan.plan.len();
+
+            // Show diff summary
+            let diff_summary = compute_plan_diff(&plan, &validated_plan);
+
+            print_json(json!({
+                "status": "ok",
+                "original_steps": original_steps,
+                "validated_steps": validated_steps,
+                "changes": diff_summary,
+                "plan_path": storage.path().display().to_string()
+            }));
+        }
         cli::PlanCommand::Preview => {
             let plan = storage.load()?;
             print_json(json!({
@@ -66,12 +94,22 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
             }));
         }
         cli::PlanCommand::Submit => {
-            let plan = storage.load()?;
+            let mut plan = storage.load()?;
 
             logging::info(&format!(
                 "PLAN submit request with {} step(s)",
                 plan.plan.len()
             ));
+
+            // Auto-validate with Delta if AGX_AUTO_VALIDATE is set
+            if should_auto_validate() {
+                logging::info("Auto-validation enabled, running Delta validation before submit");
+                plan = run_delta_validation(&plan, &storage)?;
+                logging::info(&format!(
+                    "Auto-validation complete: {} step(s)",
+                    plan.plan.len()
+                ));
+            }
 
             let job = build_job_envelope(plan)?;
             let job_json = serde_json::to_string(&job)
@@ -169,6 +207,92 @@ fn enforce_instruction_limit(command: &cli::PlanCommand) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn should_auto_validate() -> bool {
+    match std::env::var("AGX_AUTO_VALIDATE") {
+        Ok(value) => {
+            let normalized = value.to_lowercase();
+            matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+        }
+        Err(_) => false,
+    }
+}
+
+fn compute_plan_diff(
+    original: &plan::WorkflowPlan,
+    validated: &plan::WorkflowPlan,
+) -> serde_json::Value {
+    let original_cmds: Vec<String> = original.plan.iter().map(|s| s.cmd.clone()).collect();
+    let validated_cmds: Vec<String> = validated.plan.iter().map(|s| s.cmd.clone()).collect();
+
+    let added: Vec<String> = validated_cmds
+        .iter()
+        .filter(|cmd| !original_cmds.contains(cmd))
+        .cloned()
+        .collect();
+
+    let removed: Vec<String> = original_cmds
+        .iter()
+        .filter(|cmd| !validated_cmds.contains(cmd))
+        .cloned()
+        .collect();
+
+    let step_count_change = validated.plan.len() as i32 - original.plan.len() as i32;
+
+    json!({
+        "added": added,
+        "removed": removed,
+        "step_count_change": step_count_change,
+        "summary": if step_count_change > 0 {
+            format!("Added {} step(s)", step_count_change)
+        } else if step_count_change < 0 {
+            format!("Removed {} step(s)", -step_count_change)
+        } else {
+            "No change in step count".to_string()
+        }
+    })
+}
+
+/// Instruction used for Delta validation
+const DELTA_VALIDATION_INSTRUCTION: &str = "Validate and refine this plan";
+
+fn run_delta_validation(
+    current_plan: &plan::WorkflowPlan,
+    storage: &plan_buffer::PlanStorage,
+) -> Result<plan::WorkflowPlan, String> {
+    // Create Delta planner with explicit ModelRole (no env var mutation)
+    let delta_config = planner::PlannerConfig::for_delta()
+        .map_err(|e| format!("Failed to create Delta config: {}", e))?;
+    let planner = planner::Planner::new(delta_config);
+
+    // Get tool registry
+    let registry = registry::ToolRegistry::new();
+
+    // Run Delta validation with existing plan as context
+    let input = input::InputSummary::empty();
+
+    let plan_output = planner.plan_with_existing(
+        DELTA_VALIDATION_INSTRUCTION,
+        &input,
+        &registry,
+        &current_plan.plan,
+    )?;
+
+    logging::info(&format!("Delta validation output: {}", plan_output.raw_json));
+
+    let parsed = plan_output.parse()?;
+    let validated_plan = parsed.normalize_for_execution();
+
+    // Save validated plan to buffer
+    storage.save(&validated_plan)?;
+
+    logging::info(&format!(
+        "Delta validation complete: {} step(s)",
+        validated_plan.plan.len()
+    ));
+
+    Ok(validated_plan)
 }
 
 fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, String> {
