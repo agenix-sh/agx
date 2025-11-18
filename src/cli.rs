@@ -27,14 +27,16 @@ Options:\n\
     -d, --debug       Enable verbose logging to stderr.\n\
 \n\
 Environment variables:\n\
-    AGX_PLAN_PATH     Override the plan buffer location (default: $TMPDIR/agx-plan.json).\n\
-    AGX_BACKEND       Planner backend (ollama or embedded).\n\
-    AGX_OLLAMA_MODEL  Ollama model to run when using the Ollama backend (default: phi3:mini).\n\
-    AGX_MODEL_PATH    Filesystem path to a local model when using the embedded backend.\n\
-    AGX_MODEL_ARCH    Architecture for embedded models (for example: llama).\n\
-    AGQ_ADDR          AGQ TCP address (default: 127.0.0.1:6380).\n\
-    AGQ_SESSION_KEY   Session key for AGQ (optional).\n\
-    AGQ_TIMEOUT_SECS  Network timeout in seconds (default: 5).\n\
+    AGX_PLAN_PATH       Override the plan buffer location (default: $TMPDIR/agx-plan.json).\n\
+    AGX_BACKEND         Planner backend (ollama or candle).\n\
+    AGX_MODEL_ROLE      Model role (echo or delta, default: echo).\n\
+    AGX_AUTO_VALIDATE   Auto-run Delta validation before submit (true/false, default: false).\n\
+    AGX_OLLAMA_MODEL    Ollama model to run when using the Ollama backend (default: phi3:mini).\n\
+    AGX_ECHO_MODEL      Path to Echo model (GGUF) for Candle backend.\n\
+    AGX_DELTA_MODEL     Path to Delta model (GGUF) for Candle backend.\n\
+    AGQ_ADDR            AGQ TCP address (default: 127.0.0.1:6380).\n\
+    AGQ_SESSION_KEY     Session key for AGQ (optional).\n\
+    AGQ_TIMEOUT_SECS    Network timeout in seconds (default: 5).\n\
 ";
 
 #[derive(Debug, Clone)]
