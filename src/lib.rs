@@ -58,6 +58,28 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                 "plan_steps": 0
             }));
         }
+        cli::PlanCommand::Validate => {
+            let plan = storage.load()?;
+
+            if plan.plan.is_empty() {
+                return Err("plan is empty. Use `PLAN add` to generate tasks first.".to_string());
+            }
+
+            logging::info(&format!(
+                "PLAN validate request with {} step(s)",
+                plan.plan.len()
+            ));
+
+            // Run Delta validation on current plan
+            let validated_plan = run_delta_validation(&plan, &storage)?;
+
+            print_json(json!({
+                "status": "ok",
+                "original_steps": plan.plan.len(),
+                "validated_steps": validated_plan.plan.len(),
+                "plan_path": storage.path().display().to_string()
+            }));
+        }
         cli::PlanCommand::Preview => {
             let plan = storage.load()?;
             print_json(json!({
@@ -169,6 +191,54 @@ fn enforce_instruction_limit(command: &cli::PlanCommand) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn run_delta_validation(
+    current_plan: &plan::WorkflowPlan,
+    storage: &plan_buffer::PlanStorage,
+) -> Result<plan::WorkflowPlan, String> {
+    // Force Delta mode by temporarily setting environment variable
+    let original_role = std::env::var("AGX_MODEL_ROLE").ok();
+    std::env::set_var("AGX_MODEL_ROLE", "delta");
+
+    // Create Delta planner
+    let planner_config = planner::PlannerConfig::from_env();
+    let planner = planner::Planner::new(planner_config);
+
+    // Get tool registry
+    let registry = registry::ToolRegistry::new();
+
+    // Run Delta validation with existing plan as context
+    let instruction = "Validate and refine this plan";
+    let input = input::InputSummary::empty();
+
+    let plan_output = planner.plan_with_existing(
+        instruction,
+        &input,
+        &registry,
+        &current_plan.plan,
+    )?;
+
+    // Restore original AGX_MODEL_ROLE
+    match original_role {
+        Some(role) => std::env::set_var("AGX_MODEL_ROLE", role),
+        None => std::env::remove_var("AGX_MODEL_ROLE"),
+    }
+
+    logging::info(&format!("Delta validation output: {}", plan_output.raw_json));
+
+    let parsed = plan_output.parse()?;
+    let validated_plan = parsed.normalize_for_execution();
+
+    // Save validated plan to buffer
+    storage.save(&validated_plan)?;
+
+    logging::info(&format!(
+        "Delta validation complete: {} step(s)",
+        validated_plan.plan.len()
+    ));
+
+    Ok(validated_plan)
 }
 
 fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, String> {

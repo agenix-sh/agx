@@ -12,6 +12,7 @@ Usage:\n\
 PLAN subcommands:\n\
     PLAN new                 Reset the persisted plan buffer.\n\
     PLAN add \"<instruction>\"  Append planner-generated steps. Reads STDIN when piped.\n\
+    PLAN validate            Run Delta model validation on current plan.\n\
     PLAN preview             Pretty-print the current JSON plan buffer.\n\
     PLAN submit              Validate the plan and submit to AGQ.\n\
 \n\
@@ -46,6 +47,7 @@ pub enum Command {
 pub enum PlanCommand {
     New,
     Add { instruction: String },
+    Validate,
     Preview,
     Submit,
 }
@@ -141,7 +143,7 @@ fn parse_command(tokens: &[String]) -> Result<Command, String> {
 
 fn parse_plan_command(tokens: &[String]) -> Result<Command, String> {
     if tokens.is_empty() {
-        return Err("PLAN requires a subcommand (new, add, preview, submit).".to_string());
+        return Err("PLAN requires a subcommand (new, add, validate, preview, submit).".to_string());
     }
 
     let sub = tokens[0].to_lowercase();
@@ -156,6 +158,16 @@ fn parse_plan_command(tokens: &[String]) -> Result<Command, String> {
             }
 
             Ok(Command::Plan(PlanCommand::New))
+        }
+        "validate" => {
+            if tokens.len() > 1 {
+                return Err(format!(
+                    "unexpected argument after `PLAN validate`: {}",
+                    tokens[1]
+                ));
+            }
+
+            Ok(Command::Plan(PlanCommand::Validate))
         }
         "preview" => {
             if tokens.len() > 1 {
@@ -186,7 +198,7 @@ fn parse_plan_command(tokens: &[String]) -> Result<Command, String> {
             Ok(Command::Plan(PlanCommand::Add { instruction }))
         }
         _ => Err(format!(
-            "unknown PLAN subcommand: {}. Expected new/add/preview/submit.",
+            "unknown PLAN subcommand: {}. Expected new/add/validate/preview/submit.",
             tokens[0]
         )),
     }

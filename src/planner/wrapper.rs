@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::input::InputSummary;
-use crate::plan::WorkflowPlan;
+use crate::plan::{PlanStep, WorkflowPlan};
 use crate::registry::ToolRegistry;
 
 use super::backend::ModelBackend;
@@ -155,6 +155,80 @@ impl Planner {
         };
 
         // Generate plan using backend
+        let generated = self
+            .backend
+            .generate_plan(instruction, &context)
+            .await
+            .map_err(|e| format!("Backend error: {}", e))?;
+
+        // Convert back to legacy format (raw JSON)
+        let plan = WorkflowPlan {
+            plan: generated.tasks,
+        };
+
+        let raw_json =
+            serde_json::to_string(&plan).map_err(|e| format!("JSON serialization error: {}", e))?;
+
+        Ok(PlannerOutput { raw_json })
+    }
+
+    /// Plan with existing tasks (for Delta validation)
+    pub fn plan_with_existing(
+        &self,
+        instruction: &str,
+        input: &InputSummary,
+        registry: &ToolRegistry,
+        existing_tasks: &[PlanStep],
+    ) -> Result<PlannerOutput, String> {
+        // Try to use existing runtime, otherwise create new one
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.block_on(async {
+                self.plan_with_existing_async(instruction, input, registry, existing_tasks)
+                    .await
+            })
+        } else {
+            // Create new runtime
+            let runtime = tokio::runtime::Runtime::new()
+                .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+            runtime.block_on(async {
+                self.plan_with_existing_async(instruction, input, registry, existing_tasks)
+                    .await
+            })
+        }
+    }
+
+    /// Async version of plan_with_existing
+    async fn plan_with_existing_async(
+        &self,
+        instruction: &str,
+        input: &InputSummary,
+        registry: &ToolRegistry,
+        existing_tasks: &[PlanStep],
+    ) -> Result<PlannerOutput, String> {
+        // Build context from legacy types
+        let input_summary = if input.is_empty {
+            None
+        } else {
+            Some(format!(
+                "bytes: {}, lines: {}, binary: {}",
+                input.bytes, input.lines, input.is_probably_binary
+            ))
+        };
+
+        let tool_registry: Vec<ToolInfo> = registry
+            .list_tools()
+            .iter()
+            .map(|t| ToolInfo::new(t.id.clone(), t.description.clone()))
+            .collect();
+
+        let context = PlanContext {
+            tool_registry,
+            input_summary,
+            existing_tasks: existing_tasks.to_vec(),
+            max_tasks: 20,
+        };
+
+        // Generate plan using backend (will use Delta prompt if ModelRole::Delta)
         let generated = self
             .backend
             .generate_plan(instruction, &context)
