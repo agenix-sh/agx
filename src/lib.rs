@@ -164,11 +164,28 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
             let added_tasks = executable_plan.tasks.len();
 
             let mut buffer = storage.load()?;
+            let original_count = buffer.tasks.len();
             buffer.tasks.extend(executable_plan.tasks.into_iter());
 
-            // Renumber all tasks to be contiguous
+            // Renumber all tasks to be contiguous and adjust input_from_task references
+            // Build a mapping of old task_number -> new task_number
+            let mut task_number_mapping: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+            for (index, task) in buffer.tasks.iter().enumerate() {
+                let old_number = task.task_number;
+                let new_number = (index + 1) as u32;
+                task_number_mapping.insert(old_number, new_number);
+            }
+
+            // Apply renumbering and update input_from_task references
             for (index, task) in buffer.tasks.iter_mut().enumerate() {
                 task.task_number = (index + 1) as u32;
+
+                // Update input_from_task to point to the new task number
+                if let Some(old_ref) = task.input_from_task {
+                    if let Some(&new_ref) = task_number_mapping.get(&old_ref) {
+                        task.input_from_task = Some(new_ref);
+                    }
+                }
             }
 
             logging::info(&format!(

@@ -64,14 +64,16 @@ impl JobEnvelope {
         plan_description_override: Option<String>,
     ) -> Self {
         // Use plan's IDs if provided, otherwise use overrides
-        let plan_id = plan.plan_id.clone().unwrap_or(plan_id_override);
-        let plan_description = plan.plan_description.clone().or(plan_description_override);
+        let plan_id = plan.plan_id.unwrap_or(plan_id_override);
+        let plan_description = plan.plan_description.or(plan_description_override);
 
-        let tasks = plan
+        // Convert tasks and ensure proper numbering (defensive: normalize_for_execution should have done this)
+        let tasks: Vec<JobTask> = plan
             .tasks
             .into_iter()
-            .map(|task| JobTask {
-                task_number: task.task_number,
+            .enumerate()
+            .map(|(index, task)| JobTask {
+                task_number: (index + 1) as u32, // Ensure contiguous 1-based numbering
                 command: task.command,
                 args: task.args,
                 timeout_secs: task.timeout_secs,

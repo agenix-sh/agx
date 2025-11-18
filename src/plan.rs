@@ -270,9 +270,10 @@ fn extract_first_json_value(text: &str) -> Option<&str> {
 
             if depth == 0 {
                 let end = index + character.len_utf8();
-                let begin = start.unwrap();
-
-                return Some(&trimmed[begin..end]);
+                // start is guaranteed to be Some because we only reach here after setting it
+                if let Some(begin) = start {
+                    return Some(&trimmed[begin..end]);
+                }
             }
         }
     }
