@@ -50,7 +50,8 @@ pub struct ActionEnvelope {
     pub action_id: String,
     pub plan_id: String,
     pub plan_description: Option<String>,
-    pub jobs: Vec<String>,
+    pub jobs_created: usize,
+    pub job_ids: Vec<String>,
 }
 
 impl AgqClient {
@@ -410,7 +411,8 @@ mod tests {
             action_id: "act-1".into(),
             plan_id: "plan-1".into(),
             plan_description: Some("desc".into()),
-            jobs: vec!["job-1".into(), "job-2".into()],
+            jobs_created: 2,
+            job_ids: vec!["job-1".into(), "job-2".into()],
         };
 
         let json = serde_json::to_string(&action).expect("serialize action");
@@ -418,7 +420,7 @@ mod tests {
         assert!(json.contains("job-2"));
 
         let back: ActionEnvelope = serde_json::from_str(&json).expect("deserialize action");
-        assert_eq!(back.jobs.len(), 2);
+        assert_eq!(back.job_ids.len(), 2);
         assert_eq!(back.plan_description.as_deref(), Some("desc"));
     }
 
@@ -464,7 +466,7 @@ mod tests {
             }
 
             // Respond with bulk string containing ActionEnvelope JSON
-            let response_json = r#"{"action_id":"act-123","plan_id":"plan-456","plan_description":null,"jobs":["job-1","job-2"]}"#;
+            let response_json = r#"{"action_id":"act-123","plan_id":"plan-456","plan_description":null,"jobs_created":2,"job_ids":["job-1","job-2"]}"#;
             let response_bytes = format!("${}\r\n{}\r\n", response_json.len(), response_json);
             reader
                 .get_mut()
@@ -485,9 +487,9 @@ mod tests {
 
         assert_eq!(result.action_id, "act-123");
         assert_eq!(result.plan_id, "plan-456");
-        assert_eq!(result.jobs.len(), 2);
-        assert_eq!(result.jobs[0], "job-1");
-        assert_eq!(result.jobs[1], "job-2");
+        assert_eq!(result.job_ids.len(), 2);
+        assert_eq!(result.job_ids[0], "job-1");
+        assert_eq!(result.job_ids[1], "job-2");
 
         server.join().unwrap();
     }

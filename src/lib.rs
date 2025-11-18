@@ -337,17 +337,25 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
             inputs_file,
         } => {
             // Parse and validate inputs from --input flag or --inputs-file
-            let inputs_value = if let Some(inline_input) = input {
-                serde_json::from_str::<serde_json::Value>(&inline_input)
-                    .map_err(|e| format!("invalid JSON in --input: {}", e))?
+            let inputs_array = if let Some(inline_input) = input {
+                // Single input - wrap in array
+                let single_input = serde_json::from_str::<serde_json::Value>(&inline_input)
+                    .map_err(|e| format!("invalid JSON in --input: {}", e))?;
+                serde_json::json!([single_input])
             } else if let Some(file_path) = inputs_file {
+                // File should contain array of inputs
                 let content = std::fs::read_to_string(&file_path)
                     .map_err(|e| format!("failed to read inputs file '{}': {}", file_path, e))?;
-                serde_json::from_str::<serde_json::Value>(&content)
-                    .map_err(|e| format!("invalid JSON in file '{}': {}", file_path, e))?
+                let value = serde_json::from_str::<serde_json::Value>(&content)
+                    .map_err(|e| format!("invalid JSON in file '{}': {}", file_path, e))?;
+                // Validate it's an array
+                if !value.is_array() {
+                    return Err("--inputs-file must contain a JSON array of inputs".to_string());
+                }
+                value
             } else {
-                // Default to empty object if no inputs provided
-                serde_json::json!({})
+                // Default to empty array if no inputs provided
+                serde_json::json!([])
             };
 
             logging::info(&format!(
@@ -355,10 +363,14 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                 plan_id
             ));
 
+            // Generate action_id
+            let action_id = format!("action_{}", uuid::Uuid::new_v4().simple());
+
             // Build ACTION.SUBMIT payload
             let action_request = json!({
+                "action_id": action_id,
                 "plan_id": plan_id,
-                "inputs": inputs_value,
+                "inputs": inputs_array,
             });
 
             let action_json = serde_json::to_string(&action_request)
@@ -375,7 +387,8 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                         "action_id": response.action_id,
                         "plan_id": response.plan_id,
                         "plan_description": response.plan_description,
-                        "jobs": response.jobs,
+                        "jobs_created": response.jobs_created,
+                        "job_ids": response.job_ids,
                     }));
                     Ok(())
                 }
