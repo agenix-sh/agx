@@ -2,18 +2,27 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowPlan {
-    pub plan: Vec<PlanStep>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_description: Option<String>,
+    pub tasks: Vec<PlanStep>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanStep {
-    pub cmd: String,
+    pub task_number: u32,
+    pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
-    #[serde(default)]
-    pub input_from_step: Option<u32>,
-    #[serde(default)]
-    pub timeout_secs: Option<u32>,
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_from_task: Option<u32>,
+}
+
+fn default_timeout() -> u32 {
+    300
 }
 
 #[derive(Debug, Deserialize)]
@@ -23,7 +32,11 @@ struct SimpleWorkflowPlan {
 
 impl Default for WorkflowPlan {
     fn default() -> Self {
-        Self { plan: Vec::new() }
+        Self {
+            plan_id: None,
+            plan_description: None,
+            tasks: Vec::new(),
+        }
     }
 }
 
@@ -34,21 +47,29 @@ impl WorkflowPlan {
     }
 
     pub fn normalize_for_execution(mut self) -> Self {
-        if self.plan.len() == 1 && self.plan[0].cmd == "uniq" {
-            self.plan = vec![
+        // Handle special case: bare "uniq" needs "sort" first
+        if self.tasks.len() == 1 && self.tasks[0].command == "uniq" {
+            self.tasks = vec![
                 PlanStep {
-                    cmd: "sort".to_string(),
+                    task_number: 1,
+                    command: "sort".to_string(),
                     args: Vec::new(),
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: None,
                 },
                 PlanStep {
-                    cmd: "uniq".to_string(),
+                    task_number: 2,
+                    command: "uniq".to_string(),
                     args: Vec::new(),
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: Some(1),
                 },
             ];
+        }
+
+        // Ensure contiguous task numbering (1-based)
+        for (index, task) in self.tasks.iter_mut().enumerate() {
+            task.task_number = (index + 1) as u32;
         }
 
         self
@@ -110,38 +131,115 @@ fn parse_any_form(text: &str) -> Result<WorkflowPlan, serde_json::Error> {
 }
 
 fn try_all_known_forms(text: &str) -> Option<WorkflowPlan> {
-    if let Ok(plan) = serde_json::from_str::<WorkflowPlan>(text) {
+    // Try parsing as canonical schema (new format)
+    if let Ok(mut plan) = serde_json::from_str::<WorkflowPlan>(text) {
+        // Ensure task numbering is correct
+        for (index, task) in plan.tasks.iter_mut().enumerate() {
+            if task.task_number == 0 {
+                task.task_number = (index + 1) as u32;
+            }
+        }
         return Some(plan);
     }
 
-    if let Ok(simple) = serde_json::from_str::<SimpleWorkflowPlan>(text) {
+    // Try legacy format with "plan" field
+    #[derive(Deserialize)]
+    struct LegacyWorkflowPlan {
+        plan: Vec<LegacyPlanStep>,
+    }
+
+    #[derive(Deserialize)]
+    struct LegacyPlanStep {
+        cmd: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
+        input_from_step: Option<u32>,
+        #[serde(default)]
+        timeout_secs: Option<u32>,
+    }
+
+    if let Ok(legacy) = serde_json::from_str::<LegacyWorkflowPlan>(text) {
         return Some(WorkflowPlan {
-            plan: simple
+            plan_id: None,
+            plan_description: None,
+            tasks: legacy
                 .plan
                 .into_iter()
-                .map(|cmd| PlanStep {
-                    cmd,
-                    args: Vec::new(),
-                    input_from_step: None,
-                    timeout_secs: None,
+                .enumerate()
+                .map(|(index, step)| PlanStep {
+                    task_number: (index + 1) as u32,
+                    command: step.cmd,
+                    args: step.args,
+                    timeout_secs: step.timeout_secs.unwrap_or(300),
+                    input_from_task: step.input_from_step,
                 })
                 .collect(),
         });
     }
 
-    if let Ok(steps) = serde_json::from_str::<Vec<PlanStep>>(text) {
-        return Some(WorkflowPlan { plan: steps });
+    // Try simple format {"plan": ["cmd1", "cmd2"]}
+    if let Ok(simple) = serde_json::from_str::<SimpleWorkflowPlan>(text) {
+        return Some(WorkflowPlan {
+            plan_id: None,
+            plan_description: None,
+            tasks: simple
+                .plan
+                .into_iter()
+                .enumerate()
+                .map(|(index, cmd)| PlanStep {
+                    task_number: (index + 1) as u32,
+                    command: cmd,
+                    args: Vec::new(),
+                    timeout_secs: 300,
+                    input_from_task: None,
+                })
+                .collect(),
+        });
     }
 
+    // Try array of tasks
+    if let Ok(steps) = serde_json::from_str::<Vec<PlanStep>>(text) {
+        return Some(WorkflowPlan {
+            plan_id: None,
+            plan_description: None,
+            tasks: steps,
+        });
+    }
+
+    // Try array of legacy steps
+    if let Ok(legacy_steps) = serde_json::from_str::<Vec<LegacyPlanStep>>(text) {
+        return Some(WorkflowPlan {
+            plan_id: None,
+            plan_description: None,
+            tasks: legacy_steps
+                .into_iter()
+                .enumerate()
+                .map(|(index, step)| PlanStep {
+                    task_number: (index + 1) as u32,
+                    command: step.cmd,
+                    args: step.args,
+                    timeout_secs: step.timeout_secs.unwrap_or(300),
+                    input_from_task: step.input_from_step,
+                })
+                .collect(),
+        });
+    }
+
+    // Try simple array of command strings
     if let Ok(cmds) = serde_json::from_str::<Vec<String>>(text) {
         return Some(WorkflowPlan {
-            plan: cmds
+            plan_id: None,
+            plan_description: None,
+            tasks: cmds
                 .into_iter()
-                .map(|cmd| PlanStep {
-                    cmd,
+                .enumerate()
+                .map(|(index, cmd)| PlanStep {
+                    task_number: (index + 1) as u32,
+                    command: cmd,
                     args: Vec::new(),
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: None,
                 })
                 .collect(),
         });
@@ -280,10 +378,10 @@ mod tests {
         }"#;
 
         let plan = WorkflowPlan::from_str(broken).expect("plan should be repaired");
-        assert_eq!(plan.plan.len(), 2);
-        assert_eq!(plan.plan[1].cmd, "awk");
+        assert_eq!(plan.tasks.len(), 2);
+        assert_eq!(plan.tasks[1].command, "awk");
         assert_eq!(
-            plan.plan[1].args,
+            plan.tasks[1].args,
             vec!["-F\"/\",NR==1;print length($NF)".to_string()]
         );
     }

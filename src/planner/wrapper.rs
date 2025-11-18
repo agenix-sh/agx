@@ -188,9 +188,11 @@ impl Planner {
             .await
             .map_err(|e| format!("Backend error: {}", e))?;
 
-        // Convert back to legacy format (raw JSON)
+        // Convert to canonical format (with task numbering)
         let plan = WorkflowPlan {
-            plan: generated.tasks,
+            plan_id: None,
+            plan_description: None,
+            tasks: generated.tasks,
         };
 
         let raw_json =
@@ -262,9 +264,11 @@ impl Planner {
             .await
             .map_err(|e| format!("Backend error: {}", e))?;
 
-        // Convert back to legacy format (raw JSON)
+        // Convert to canonical format (with task numbering)
         let plan = WorkflowPlan {
-            plan: generated.tasks,
+            plan_id: None,
+            plan_description: None,
+            tasks: generated.tasks,
         };
 
         let raw_json =

@@ -59,10 +59,14 @@ impl OllamaBackend {
              Available tools:\n\
              {tools}\n\
              \n\
-             Respond with a single JSON object only, no extra commentary, in one of these exact shapes:\n\
-             {{\"plan\": [{{\"cmd\": \"tool-id\"}}, {{\"cmd\": \"tool-id\", \"args\": [\"arg1\", \"arg2\"]}}]}}\n\
-             or\n\
-             {{\"plan\": [\"tool-id\", \"another-tool-id\"]}}\n\
+             Respond with a single JSON object only, no extra commentary.\n\
+             Use this exact format:\n\
+             {{\"tasks\": [{{\"task_number\": 1, \"command\": \"tool-id\", \"args\": [], \"timeout_secs\": 300}}]}}\n\
+             \n\
+             - task_number: 1-based, contiguous (1, 2, 3...)\n\
+             - command: tool identifier from list above\n\
+             - args: arguments for the command (empty array if none)\n\
+             - timeout_secs: timeout in seconds (default 300)\n\
              \n\
              Use only the tools listed above and produce a deterministic, minimal plan.",
             instruction = instruction,
@@ -76,7 +80,7 @@ impl OllamaBackend {
         let plan = WorkflowPlan::from_str(response)
             .map_err(|e| ModelError::ParseError(format!("Failed to parse plan JSON: {}", e)))?;
 
-        Ok(plan.plan)
+        Ok(plan.tasks)
     }
 }
 

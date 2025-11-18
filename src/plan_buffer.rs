@@ -153,7 +153,7 @@ mod tests {
         let storage = PlanStorage::new(path.clone());
         let plan = storage.load().expect("missing file should load as empty");
 
-        assert_eq!(plan.plan.len(), 0);
+        assert_eq!(plan.tasks.len(), 0);
     }
 
     #[test]
@@ -166,20 +166,23 @@ mod tests {
 
         let storage = PlanStorage::new(path.clone());
         let plan = WorkflowPlan {
-            plan: vec![PlanStep {
-                cmd: "sort".to_string(),
+            plan_id: None,
+            plan_description: None,
+            tasks: vec![PlanStep {
+                task_number: 1,
+                command: "sort".to_string(),
                 args: vec!["-r".to_string()],
-                input_from_step: None,
-                timeout_secs: None,
+                timeout_secs: 300,
+                input_from_task: None,
             }],
         };
 
         storage.save(&plan).expect("save should succeed");
 
         let loaded = storage.load().expect("load should succeed");
-        assert_eq!(loaded.plan.len(), 1);
-        assert_eq!(loaded.plan[0].cmd, "sort");
-        assert_eq!(loaded.plan[0].args, vec!["-r"]);
+        assert_eq!(loaded.tasks.len(), 1);
+        assert_eq!(loaded.tasks[0].command, "sort");
+        assert_eq!(loaded.tasks[0].args, vec!["-r"]);
 
         fs::remove_file(path).unwrap();
     }

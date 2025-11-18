@@ -6,47 +6,51 @@ use crate::plan::WorkflowPlan;
 pub struct JobEnvelope {
     pub job_id: String,
     pub plan_id: String,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plan_description: Option<String>,
-    pub steps: Vec<JobStep>,
+    pub tasks: Vec<JobTask>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JobStep {
-    pub step_number: u32,
+pub struct JobTask {
+    pub task_number: u32,
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
-    #[serde(default)]
-    pub input_from_step: Option<u32>,
-    #[serde(default)]
-    pub timeout_secs: Option<u32>,
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_from_task: Option<u32>,
+}
+
+fn default_timeout() -> u32 {
+    300
 }
 
 #[derive(Debug)]
 pub enum EnvelopeValidationError {
-    EmptySteps,
-    TooManySteps(usize),
-    NonMonotonicSteps,
+    EmptyTasks,
+    TooManyTasks(usize),
+    NonMonotonicTasks,
     BadInputReference(u32),
-    FirstStepNotOne(u32),
+    FirstTaskNotOne(u32),
 }
 
 impl std::fmt::Display for EnvelopeValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EnvelopeValidationError::EmptySteps => write!(f, "plan contains no steps"),
-            EnvelopeValidationError::TooManySteps(count) => {
-                write!(f, "plan has too many steps ({count})")
+            EnvelopeValidationError::EmptyTasks => write!(f, "plan contains no tasks"),
+            EnvelopeValidationError::TooManyTasks(count) => {
+                write!(f, "plan has too many tasks ({count})")
             }
-            EnvelopeValidationError::NonMonotonicSteps => {
-                write!(f, "step numbers must be contiguous starting at 1")
+            EnvelopeValidationError::NonMonotonicTasks => {
+                write!(f, "task numbers must be contiguous starting at 1")
             }
-            EnvelopeValidationError::BadInputReference(step) => {
-                write!(f, "input_from_step references invalid step {step}")
+            EnvelopeValidationError::BadInputReference(task) => {
+                write!(f, "input_from_task references invalid task {task}")
             }
-            EnvelopeValidationError::FirstStepNotOne(n) => {
-                write!(f, "first step number must be 1 (found {n})")
+            EnvelopeValidationError::FirstTaskNotOne(n) => {
+                write!(f, "first task number must be 1 (found {n})")
             }
         }
     }
@@ -56,19 +60,22 @@ impl JobEnvelope {
     pub fn from_plan(
         plan: WorkflowPlan,
         job_id: String,
-        plan_id: String,
-        plan_description: Option<String>,
+        plan_id_override: String,
+        plan_description_override: Option<String>,
     ) -> Self {
-        let steps = plan
-            .plan
+        // Use plan's IDs if provided, otherwise use overrides
+        let plan_id = plan.plan_id.clone().unwrap_or(plan_id_override);
+        let plan_description = plan.plan_description.clone().or(plan_description_override);
+
+        let tasks = plan
+            .tasks
             .into_iter()
-            .enumerate()
-            .map(|(idx, step)| JobStep {
-                step_number: (idx + 1) as u32,
-                command: step.cmd,
-                args: step.args,
-                input_from_step: step.input_from_step,
-                timeout_secs: step.timeout_secs,
+            .map(|task| JobTask {
+                task_number: task.task_number,
+                command: task.command,
+                args: task.args,
+                timeout_secs: task.timeout_secs,
+                input_from_task: task.input_from_task,
             })
             .collect();
 
@@ -76,36 +83,36 @@ impl JobEnvelope {
             job_id,
             plan_id,
             plan_description,
-            steps,
+            tasks,
         }
     }
 
-    pub fn validate(&self, max_steps: usize) -> Result<(), EnvelopeValidationError> {
-        if self.steps.is_empty() {
-            return Err(EnvelopeValidationError::EmptySteps);
+    pub fn validate(&self, max_tasks: usize) -> Result<(), EnvelopeValidationError> {
+        if self.tasks.is_empty() {
+            return Err(EnvelopeValidationError::EmptyTasks);
         }
 
-        if self.steps[0].step_number != 1 {
-            return Err(EnvelopeValidationError::FirstStepNotOne(
-                self.steps[0].step_number,
+        if self.tasks[0].task_number != 1 {
+            return Err(EnvelopeValidationError::FirstTaskNotOne(
+                self.tasks[0].task_number,
             ));
         }
 
-        if self.steps.len() > max_steps {
-            return Err(EnvelopeValidationError::TooManySteps(self.steps.len()));
+        if self.tasks.len() > max_tasks {
+            return Err(EnvelopeValidationError::TooManyTasks(self.tasks.len()));
         }
 
-        for window in self.steps.windows(2) {
-            if window[0].step_number + 1 != window[1].step_number {
-                return Err(EnvelopeValidationError::NonMonotonicSteps);
+        for window in self.tasks.windows(2) {
+            if window[0].task_number + 1 != window[1].task_number {
+                return Err(EnvelopeValidationError::NonMonotonicTasks);
             }
         }
 
         let mut seen = std::collections::HashSet::new();
-        for step in &self.steps {
-            seen.insert(step.step_number);
-            if let Some(ref_id) = step.input_from_step {
-                if ref_id >= step.step_number || !seen.contains(&ref_id) {
+        for task in &self.tasks {
+            seen.insert(task.task_number);
+            if let Some(ref_id) = task.input_from_task {
+                if ref_id >= task.task_number || !seen.contains(&ref_id) {
                     return Err(EnvelopeValidationError::BadInputReference(ref_id));
                 }
             }
@@ -121,59 +128,63 @@ mod tests {
     use crate::plan::PlanStep;
 
     #[test]
-    fn builds_envelope_with_step_numbers() {
+    fn builds_envelope_with_task_numbers() {
         let plan = WorkflowPlan {
-            plan: vec![
+            plan_id: None,
+            plan_description: None,
+            tasks: vec![
                 PlanStep {
-                    cmd: "sort".into(),
+                    task_number: 1,
+                    command: "sort".into(),
                     args: vec![],
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: None,
                 },
                 PlanStep {
-                    cmd: "uniq".into(),
+                    task_number: 2,
+                    command: "uniq".into(),
                     args: vec![],
-                    input_from_step: Some(1),
-                    timeout_secs: Some(30),
+                    timeout_secs: 30,
+                    input_from_task: Some(1),
                 },
             ],
         };
 
         let env =
             JobEnvelope::from_plan(plan, "job-1".into(), "plan-1".into(), Some("desc".into()));
-        assert_eq!(env.steps.len(), 2);
-        assert_eq!(env.steps[0].step_number, 1);
-        assert_eq!(env.steps[1].step_number, 2);
-        assert_eq!(env.steps[1].input_from_step, Some(1));
-        assert_eq!(env.steps[1].timeout_secs, Some(30));
+        assert_eq!(env.tasks.len(), 2);
+        assert_eq!(env.tasks[0].task_number, 1);
+        assert_eq!(env.tasks[1].task_number, 2);
+        assert_eq!(env.tasks[1].input_from_task, Some(1));
+        assert_eq!(env.tasks[1].timeout_secs, 30);
     }
 
     #[test]
-    fn validates_monotonic_steps() {
+    fn validates_monotonic_tasks() {
         let env = JobEnvelope {
             job_id: "job".into(),
             plan_id: "plan".into(),
             plan_description: None,
-            steps: vec![
-                JobStep {
-                    step_number: 1,
+            tasks: vec![
+                JobTask {
+                    task_number: 1,
                     command: "c".into(),
                     args: vec![],
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: None,
                 },
-                JobStep {
-                    step_number: 3,
+                JobTask {
+                    task_number: 3,
                     command: "c".into(),
                     args: vec![],
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: None,
                 },
             ],
         };
 
         let err = env.validate(10).unwrap_err();
-        matches!(err, EnvelopeValidationError::NonMonotonicSteps);
+        matches!(err, EnvelopeValidationError::NonMonotonicTasks);
     }
 
     #[test]
@@ -182,20 +193,20 @@ mod tests {
             job_id: "job".into(),
             plan_id: "plan".into(),
             plan_description: None,
-            steps: vec![
-                JobStep {
-                    step_number: 1,
+            tasks: vec![
+                JobTask {
+                    task_number: 1,
                     command: "c".into(),
                     args: vec![],
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: None,
                 },
-                JobStep {
-                    step_number: 2,
+                JobTask {
+                    task_number: 2,
                     command: "c".into(),
                     args: vec![],
-                    input_from_step: Some(5),
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: Some(5),
                 },
             ],
         };
