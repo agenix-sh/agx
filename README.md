@@ -30,14 +30,48 @@ cargo install agx
 
 (Until AGX is published on crates.io, you may instead use `cargo install --git https://github.com/agenix-sh/agx.git --locked agx`.)
 
-## PLAN workflow
+## Interactive REPL Mode (AGX-042)
 
-Phase 1 introduces a `PLAN` REPL-style workflow:
+**New in Phase 1:** Run `agx` without arguments to enter an interactive REPL for iterative plan crafting:
+
+```bash
+agx  # Enter interactive mode
+```
+
+The REPL provides:
+- **Iterative planning** — Add, edit, and refine plan steps in a conversational session
+- **Full editing** — Modify or remove specific steps with `edit <num>` and `remove <num>`
+- **Session persistence** — State auto-saves to `~/.agx/repl-state.json` and resumes on next launch
+- **Vi mode** — Default vi keybindings (Ctrl-G to enter command mode)
+- **Echo model integration** — Uses the fast, conversational Echo model for natural back-and-forth refinement
+
+### REPL Commands
+
+- `add "<instruction>"` — Generate and append plan steps using Echo model
+- `preview` — Show current plan
+- `edit <num>` — Modify a specific step
+- `remove <num>` — Delete a specific step
+- `clear` — Reset the plan
+- `validate` — Run Delta model validation (coming in AGX-045/046)
+- `submit` — Submit plan to AGQ (use `agx PLAN submit` for now)
+- `save` — Manually save session
+- `help` — Show available commands
+- `quit` — Exit REPL
+
+### Keyboard Shortcuts
+
+- **Ctrl-G** — Enter vi mode for editing
+- **Ctrl-C** — Cancel current input
+- **Ctrl-D** — Exit REPL
+
+## PLAN workflow (non-interactive)
+
+For scripted workflows, use the traditional `PLAN` subcommands:
 
 1. `PLAN new` — start/reset the persisted plan buffer (defaults to `$TMPDIR/agx-plan.json`, override with `AGX_PLAN_PATH`).
-2. `PLAN add "<instruction>"` — capture a natural-language instruction, read STDIN when piped, run the configured planner backend (Ollama today), and append the generated steps to the buffer.
+2. `PLAN add "<instruction>"` — capture a natural-language instruction, read STDIN when piped, run the configured planner backend, and append the generated steps to the buffer.
 3. `PLAN preview` — pretty-print the current JSON plan so it can be inspected before queueing.
-4. `PLAN submit` — validate the plan and (in upcoming work) send it to AGQ. For now, it emits the plan JSON and a placeholder status message.
+4. `PLAN submit` — validate the plan and send it to AGQ.
 
 `PLAN add` can be run multiple times to iteratively build a workflow. Structured logs (`--debug`) show the instruction, input summary, tool registry snapshot, and the raw planner JSON to keep the pipeline auditable.
 
@@ -74,6 +108,42 @@ PLAN submit now wraps the full plan into a job envelope so all steps run on a si
 
 ## Examples
 
+### Interactive REPL Session
+
+```bash
+# Enter interactive mode
+agx
+
+# In the REPL:
+agx (0)> add "convert PDF to text"
+🤖 Generating plan steps...
+✓ Added 2 task(s)
+
+agx (2)> preview
+📋 Current plan (2 tasks):
+
+  1. pdf-to-text input.pdf
+  2. save-output output.txt
+
+agx (2)> edit 2
+Editing task 2:
+  Current: save-output output.txt
+
+  New command> write-file output.txt
+✓ Updated task 2
+
+agx (2)> submit
+📤 Submitting plan to AGQ...
+⚠️  Submit via REPL not yet fully integrated
+   Use 'agx PLAN submit' for now
+
+agx (2)> quit
+Saving session...
+Goodbye!
+```
+
+### Non-interactive Workflow
+
 ```bash
 # start clean
 agx PLAN new
@@ -85,7 +155,7 @@ cat data.csv | agx PLAN add "dedupe rows by first three columns"
 # inspect the JSON plan buffer
 agx PLAN preview
 
-# placeholder submission (AGQ wiring tracked in issue #31)
+# submit to AGQ
 agx PLAN submit
 ```
 

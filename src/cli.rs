@@ -4,6 +4,7 @@ const HELP_TEXT: &str = "\
 AGX - Agentic planner CLI (Phase 1)\n\
 \n\
 Usage:\n\
+    agx [OPTIONS]            Start interactive REPL mode (default).\n\
     agx [OPTIONS] PLAN <subcommand>\n\
     agx [OPTIONS] ACTION submit --plan-id <ID> [--input <json>] [--inputs-file <path>]\n\
     agx [OPTIONS] JOBS list [--json]\n\
@@ -48,6 +49,7 @@ Environment variables:\n\
 
 #[derive(Debug, Clone)]
 pub enum Command {
+    Repl,
     Plan(PlanCommand),
     Action(ActionCommand),
     Ops(OpsCommand),
@@ -124,17 +126,15 @@ impl CliConfig {
         }
 
         let command = if command_tokens.is_empty() {
-            None
+            // No command means enter REPL mode (unless showing help/version)
+            if !show_help && !show_version {
+                Some(Command::Repl)
+            } else {
+                None
+            }
         } else {
             Some(parse_command(&command_tokens)?)
         };
-
-        if command.is_none() && !show_help && !show_version {
-            return Err(
-                "a command is required. Run `agx --help` or `agx -v` for usage information."
-                    .to_string(),
-            );
-        }
 
         Ok(Self {
             command,

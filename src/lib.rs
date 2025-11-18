@@ -8,6 +8,7 @@ pub mod plan;
 pub mod plan_buffer;
 pub mod planner;
 pub mod registry;
+pub mod repl;
 
 use serde_json::json;
 
@@ -38,10 +39,45 @@ pub fn run() -> Result<(), String> {
     }
 
     match command {
+        cli::Command::Repl => handle_repl(),
         cli::Command::Plan(plan_command) => handle_plan_command(plan_command),
         cli::Command::Action(action_command) => handle_action_command(action_command),
         cli::Command::Ops(ops_command) => handle_ops_command(ops_command),
     }
+}
+
+fn handle_repl() -> Result<(), String> {
+    // Create backend for Echo model (interactive planning)
+    let config = planner::PlannerConfig::from_env();
+
+    // Use async to create backend (requires tokio runtime)
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("failed to create runtime: {}", e))?;
+
+    let backend: Box<dyn planner::ModelBackend> = rt.block_on(async {
+        match config.backend {
+            planner::BackendKind::Ollama => {
+                let ollama_config = planner::ollama::OllamaConfig::default();
+                let backend = planner::ollama::OllamaBackend::from_config(ollama_config);
+                Ok::<Box<dyn planner::ModelBackend>, String>(Box::new(backend))
+            }
+            planner::BackendKind::Candle => {
+                // Force Echo role for REPL
+                let role = planner::ModelRole::Echo;
+                let candle_config = planner::CandleConfig::from_env(role)
+                    .map_err(|e| format!("failed to load Candle config: {}", e))?;
+
+                let backend = planner::CandleBackend::new(candle_config).await
+                    .map_err(|e| format!("failed to initialize Candle backend: {}", e))?;
+
+                Ok::<Box<dyn planner::ModelBackend>, String>(Box::new(backend))
+            }
+        }
+    })?;
+
+    // Create and run REPL
+    let mut repl_session = repl::Repl::new(backend)?;
+    repl_session.run()
 }
 
 fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {

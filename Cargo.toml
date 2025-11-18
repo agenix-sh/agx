@@ -30,6 +30,10 @@ candle-transformers = "0.9"
 candle-nn = "0.9"
 tokenizers = "0.22"
 
+# REPL dependencies
+rustyline = "14"
+dirs = "5"
+
 [dev-dependencies]
 tempfile = "3"
 
