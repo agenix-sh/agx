@@ -136,9 +136,10 @@ async fn main() -> Result<()> {
 
 ### Modifying Plan Schema
 
-1. **STOP** - Plan schema is canonical in `agenix/specs/job-schema.md`
-2. Changes require cross-repo coordination (agx, agq, agw)
-3. Use multi-repo-coordinator agent for planning
+1. **STOP** - Schemas are canonical in `agenix/specs/` directory
+2. Read `agenix/specs/README.md` for Plan vs Job distinction
+3. Changes require cross-repo coordination (agx, agq, agw)
+4. Use multi-repo-coordinator agent for planning
 
 ### Adding RESP Commands
 
@@ -182,17 +183,18 @@ gh pr create --title "feat: Echo model integration" --body "..."
 - Ensure `#[tokio::test]` for async tests
 
 ### "Plan schema mismatch with AGQ"
-- Central schema: `agenix-shared/specs/job-schema.md`
+- Canonical schemas: `agenix/specs/` directory
+- Job schema spec: `agenix/docs/architecture/job-schema.md`
 - Run cross-repo validation: `cargo test --test integration`
 
 ## References
 
-- **Central docs:** `agenix-shared/docs/`
-- **Architecture:** `agenix-shared/docs/architecture/system-overview.md`
-- **Security:** `agenix-shared/docs/development/security-guidelines.md`
-- **Testing:** `agenix-shared/docs/development/testing-strategy.md`
-- **Job Schema:** `agenix-shared/specs/job-schema.md`
-- **RESP Protocol:** `agenix-shared/docs/api/resp-protocol.md`
+- **Central docs:** `agenix/docs/`
+- **Architecture:** `agenix/docs/architecture/` (execution-layers.md, job-schema.md, system-overview.md)
+- **Schemas:** `agenix/specs/` (job.schema.json, README.md)
+- **Security:** `agenix/docs/development/security-guidelines.md` (when created)
+- **Testing:** `agenix/docs/development/testing-strategy.md` (when created)
+- **RESP Protocol:** `agenix/docs/api/resp-protocol.md` (when created)
 
 ## When in Doubt
 
