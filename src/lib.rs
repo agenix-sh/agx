@@ -329,6 +329,37 @@ fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, Stri
     Ok(envelope)
 }
 
+/// Validate file path to prevent path traversal attacks
+/// Rejects absolute paths, parent directory references, and symlinks
+fn validate_file_path(path: &str) -> Result<(), String> {
+    use std::path::Path;
+
+    let path_obj = Path::new(path);
+
+    // Reject absolute paths
+    if path_obj.is_absolute() {
+        return Err("absolute paths not allowed for --inputs-file".to_string());
+    }
+
+    // Check for parent directory components (..)
+    for component in path_obj.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err("parent directory references (..) not allowed in --inputs-file".to_string());
+        }
+    }
+
+    // Reject paths that resolve to symlinks (security risk)
+    if path_obj.exists() {
+        let metadata = std::fs::symlink_metadata(path)
+            .map_err(|_| "failed to validate file path".to_string())?;
+        if metadata.file_type().is_symlink() {
+            return Err("symlinks not allowed for --inputs-file".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
     match command {
         cli::ActionCommand::Submit {
@@ -337,17 +368,42 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
             inputs_file,
         } => {
             // Parse and validate inputs from --input flag or --inputs-file
-            let inputs_value = if let Some(inline_input) = input {
-                serde_json::from_str::<serde_json::Value>(&inline_input)
-                    .map_err(|e| format!("invalid JSON in --input: {}", e))?
+            let inputs_array = if let Some(inline_input) = input {
+                // Single input - wrap in array
+                let single_input = serde_json::from_str::<serde_json::Value>(&inline_input)
+                    .map_err(|e| format!("invalid JSON in --input: {}", e))?;
+                serde_json::json!([single_input])
             } else if let Some(file_path) = inputs_file {
+                // Validate path to prevent path traversal attacks
+                validate_file_path(&file_path)?;
+
+                // Check file size before reading (10MB limit)
+                const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
+                let metadata = std::fs::metadata(&file_path)
+                    .map_err(|_| "failed to read inputs file: file not found or not accessible".to_string())?;
+
+                if metadata.len() > MAX_FILE_SIZE {
+                    return Err(format!(
+                        "inputs file too large: {} bytes (max {} bytes)",
+                        metadata.len(),
+                        MAX_FILE_SIZE
+                    ));
+                }
+
+                // Read and parse file
                 let content = std::fs::read_to_string(&file_path)
-                    .map_err(|e| format!("failed to read inputs file '{}': {}", file_path, e))?;
-                serde_json::from_str::<serde_json::Value>(&content)
-                    .map_err(|e| format!("invalid JSON in file '{}': {}", file_path, e))?
+                    .map_err(|_| "failed to read inputs file: file not found or not accessible".to_string())?;
+                let value = serde_json::from_str::<serde_json::Value>(&content)
+                    .map_err(|_| "invalid JSON in inputs file".to_string())?;
+
+                // Validate it's an array
+                if !value.is_array() {
+                    return Err("--inputs-file must contain a JSON array of inputs".to_string());
+                }
+                value
             } else {
-                // Default to empty object if no inputs provided
-                serde_json::json!({})
+                // Default to empty array if no inputs provided
+                serde_json::json!([])
             };
 
             logging::info(&format!(
@@ -355,10 +411,14 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                 plan_id
             ));
 
+            // Generate action_id
+            let action_id = format!("action_{}", uuid::Uuid::new_v4().simple());
+
             // Build ACTION.SUBMIT payload
             let action_request = json!({
+                "action_id": action_id,
                 "plan_id": plan_id,
-                "inputs": inputs_value,
+                "inputs": inputs_array,
             });
 
             let action_json = serde_json::to_string(&action_request)
@@ -375,7 +435,8 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                         "action_id": response.action_id,
                         "plan_id": response.plan_id,
                         "plan_description": response.plan_description,
-                        "jobs": response.jobs,
+                        "jobs_created": response.jobs_created,
+                        "job_ids": response.job_ids,
                     }));
                     Ok(())
                 }
@@ -589,5 +650,28 @@ mod tests {
         let invalid_json2 = r#"not json at all"#;
         let result2 = serde_json::from_str::<serde_json::Value>(invalid_json2);
         assert!(result2.is_err());
+    }
+
+    #[test]
+    fn validate_file_path_rejects_absolute_paths() {
+        let result = validate_file_path("/etc/passwd");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("absolute paths not allowed"));
+    }
+
+    #[test]
+    fn validate_file_path_rejects_parent_references() {
+        let result = validate_file_path("../../../etc/passwd");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("parent directory references"));
+    }
+
+    #[test]
+    fn validate_file_path_accepts_relative_paths() {
+        let result = validate_file_path("inputs.json");
+        assert!(result.is_ok());
+
+        let result2 = validate_file_path("data/inputs.json");
+        assert!(result2.is_ok());
     }
 }
