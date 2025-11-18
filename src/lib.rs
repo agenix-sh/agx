@@ -164,26 +164,19 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
             let added_tasks = executable_plan.tasks.len();
 
             let mut buffer = storage.load()?;
-            let original_count = buffer.tasks.len();
+            let offset = buffer.tasks.len() as u32;
             buffer.tasks.extend(executable_plan.tasks.into_iter());
 
-            // Renumber all tasks to be contiguous and adjust input_from_task references
-            // Build a mapping of old task_number -> new task_number
-            let mut task_number_mapping: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
-            for (index, task) in buffer.tasks.iter().enumerate() {
-                let old_number = task.task_number;
-                let new_number = (index + 1) as u32;
-                task_number_mapping.insert(old_number, new_number);
-            }
+            // Renumber newly added tasks by offset and adjust their input_from_task references
+            // Existing tasks keep their numbers unchanged
+            if offset > 0 {
+                for task in buffer.tasks.iter_mut().skip(offset as usize) {
+                    let old_number = task.task_number;
+                    task.task_number = old_number + offset;
 
-            // Apply renumbering and update input_from_task references
-            for (index, task) in buffer.tasks.iter_mut().enumerate() {
-                task.task_number = (index + 1) as u32;
-
-                // Update input_from_task to point to the new task number
-                if let Some(old_ref) = task.input_from_task {
-                    if let Some(&new_ref) = task_number_mapping.get(&old_ref) {
-                        task.input_from_task = Some(new_ref);
+                    // Adjust input_from_task references within newly added tasks
+                    if let Some(old_ref) = task.input_from_task {
+                        task.input_from_task = Some(old_ref + offset);
                     }
                 }
             }
@@ -427,5 +420,75 @@ mod tests {
         assert_eq!(env.tasks.len(), 2);
         assert!(!env.job_id.is_empty());
         assert!(!env.plan_id.is_empty());
+    }
+
+    #[test]
+    fn plan_append_preserves_task_dependencies() {
+        // Test that appending new tasks preserves input_from_task references
+        // Simulates PLAN add workflow where new tasks are appended to existing buffer
+
+        // Existing buffer with dependencies: task 2 depends on task 1
+        let mut buffer = plan::WorkflowPlan {
+            plan_id: None,
+            plan_description: None,
+            tasks: vec![
+                plan::PlanStep {
+                    task_number: 1,
+                    command: "cat".into(),
+                    args: vec![],
+                    timeout_secs: 300,
+                    input_from_task: None,
+                },
+                plan::PlanStep {
+                    task_number: 2,
+                    command: "sort".into(),
+                    args: vec![],
+                    timeout_secs: 300,
+                    input_from_task: Some(1), // Depends on task 1
+                },
+            ],
+        };
+
+        // New plan to append (normalized, so starts at 1)
+        let new_plan = plan::WorkflowPlan {
+            plan_id: None,
+            plan_description: None,
+            tasks: vec![plan::PlanStep {
+                task_number: 1,
+                command: "uniq".into(),
+                args: vec![],
+                timeout_secs: 300,
+                input_from_task: None,
+            }],
+        };
+
+        // Simulate PLAN add logic
+        let offset = buffer.tasks.len() as u32;
+        buffer.tasks.extend(new_plan.tasks.into_iter());
+
+        if offset > 0 {
+            for task in buffer.tasks.iter_mut().skip(offset as usize) {
+                let old_number = task.task_number;
+                task.task_number = old_number + offset;
+
+                if let Some(old_ref) = task.input_from_task {
+                    task.input_from_task = Some(old_ref + offset);
+                }
+            }
+        }
+
+        // Verify results
+        assert_eq!(buffer.tasks.len(), 3);
+        assert_eq!(buffer.tasks[0].task_number, 1);
+        assert_eq!(buffer.tasks[0].command, "cat");
+        assert_eq!(buffer.tasks[0].input_from_task, None);
+
+        assert_eq!(buffer.tasks[1].task_number, 2);
+        assert_eq!(buffer.tasks[1].command, "sort");
+        assert_eq!(buffer.tasks[1].input_from_task, Some(1)); // Still points to task 1 ✓
+
+        assert_eq!(buffer.tasks[2].task_number, 3); // Renumbered from 1 to 3
+        assert_eq!(buffer.tasks[2].command, "uniq");
+        assert_eq!(buffer.tasks[2].input_from_task, None);
     }
 }
