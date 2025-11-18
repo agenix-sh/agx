@@ -3,19 +3,46 @@
 AGX itself is an Agentic Unit (AU) designed to run in CLI environments.  
 This document defines the internal agents, their responsibilities in the Phase 1 architecture (AGX planner + AGQ queue + AGW workers), and the contributor workflow expectations.
 
-## 1. Planner Agent (AGX CLI — PLAN mode)
+## 1. Planner Agent (AGX CLI — REPL & PLAN modes)
 ### Purpose
 Transform natural-language user instructions into deterministic JSON workflow plans that AGQ can schedule for AGW workers.
 
-### Capabilities
+### Modes of Operation
+
+#### Interactive REPL Mode (AGX-042)
+Run `agx` without arguments to enter an interactive session for iterative plan crafting:
+
+**REPL Commands:**
+- `add "<instruction>"` – Generate and append plan steps using Echo model
+- `preview` – Show current plan
+- `edit <num>` – Modify a specific step
+- `remove <num>` – Delete a specific step
+- `clear` – Reset the plan
+- `validate` – Run Delta model validation
+- `submit` – Submit plan to AGQ
+- `save` – Manually save session
+- `help` – Show available commands
+- `quit` – Exit REPL
+
+**REPL Features:**
+- Session persistence to `~/.agx/repl-state.json` (auto-save on quit, auto-resume on launch)
+- Vi mode keybindings (Ctrl-G to enter command mode)
+- Full plan editing capabilities
+- Command history across sessions
+- Echo model integration for conversational planning
+
+#### Non-Interactive PLAN Mode
+For scripted workflows and CI/CD pipelines:
 - `PLAN new` – start/reset the persisted plan buffer
 - `PLAN add "<instruction>"` – capture the instruction, run the configured planner backend, and append steps
 - `PLAN preview` – pretty-print / lint the in-progress plan
 - `PLAN submit` – send the finalized plan to AGQ via RESP with session-key auth and emit machine-readable status
-- Ops commands:
-  - `JOBS list [--json]`
-  - `WORKERS list [--json]`
-  - `QUEUE stats [--json]`
+- `PLAN validate` – Run Delta model validation on current plan
+
+#### Ops Commands (both modes)
+- `JOBS list [--json]`
+- `WORKERS list [--json]`
+- `QUEUE stats [--json]`
 
 ### Input Context
 - Natural-language instructions
