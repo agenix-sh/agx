@@ -336,35 +336,29 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
             input,
             inputs_file,
         } => {
-            // Parse inputs from --input flag or --inputs-file
-            let inputs_json = if let Some(inline_input) = input {
-                // Validate JSON
+            // Parse and validate inputs from --input flag or --inputs-file
+            let inputs_value = if let Some(inline_input) = input {
                 serde_json::from_str::<serde_json::Value>(&inline_input)
-                    .map_err(|e| format!("invalid JSON in --input: {}", e))?;
-                inline_input
+                    .map_err(|e| format!("invalid JSON in --input: {}", e))?
             } else if let Some(file_path) = inputs_file {
-                // Read and validate JSON from file
                 let content = std::fs::read_to_string(&file_path)
                     .map_err(|e| format!("failed to read inputs file '{}': {}", file_path, e))?;
                 serde_json::from_str::<serde_json::Value>(&content)
-                    .map_err(|e| format!("invalid JSON in file '{}': {}", file_path, e))?;
-                content
+                    .map_err(|e| format!("invalid JSON in file '{}': {}", file_path, e))?
             } else {
                 // Default to empty object if no inputs provided
-                "{}".to_string()
+                serde_json::json!({})
             };
 
             logging::info(&format!(
-                "ACTION submit request for plan_id: {}, inputs bytes: {}",
-                plan_id,
-                inputs_json.len()
+                "ACTION submit request for plan_id: {}",
+                plan_id
             ));
 
             // Build ACTION.SUBMIT payload
             let action_request = json!({
                 "plan_id": plan_id,
-                "inputs": serde_json::from_str::<serde_json::Value>(&inputs_json)
-                    .map_err(|e| format!("failed to parse inputs JSON: {}", e))?,
+                "inputs": inputs_value,
             });
 
             let action_json = serde_json::to_string(&action_request)

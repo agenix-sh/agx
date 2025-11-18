@@ -19,9 +19,9 @@ PLAN subcommands:\n\
 \n\
 ACTION subcommands:\n\
     ACTION submit            Execute a plan with data inputs.\n\
-      --plan-id <ID>         Plan ID to execute (required).\n\
-      --input <json>         Inline JSON input data.\n\
-      --inputs-file <path>   Path to file containing JSON input data.\n\
+      --plan-id <ID>         Plan ID to execute (required, non-empty).\n\
+      --input <json>         Inline JSON input data (mutually exclusive with --inputs-file).\n\
+      --inputs-file <path>   Path to file containing JSON input data (mutually exclusive with --input).\n\
 \n\
 Ops commands:\n\
     JOBS list                List jobs from AGQ (add --json for machine output).\n\
@@ -269,9 +269,19 @@ fn parse_action_command(tokens: &[String]) -> Result<Command, String> {
                 }
             }
 
+            // Validate mutual exclusivity
+            if input.is_some() && inputs_file.is_some() {
+                return Err("cannot specify both --input and --inputs-file".to_string());
+            }
+
             let plan_id = plan_id.ok_or_else(|| {
                 "ACTION submit requires --plan-id. See `agx --help`.".to_string()
             })?;
+
+            // Validate plan_id is not empty
+            if plan_id.is_empty() {
+                return Err("--plan-id cannot be empty".to_string());
+            }
 
             Ok(Command::Action(ActionCommand::Submit {
                 plan_id,
@@ -539,5 +549,33 @@ mod tests {
         ]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unexpected argument"));
+    }
+
+    #[test]
+    fn action_submit_rejects_both_input_flags() {
+        let result = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+            "plan-123".to_string(),
+            "--input".to_string(),
+            "{}".to_string(),
+            "--inputs-file".to_string(),
+            "file.json".to_string(),
+        ]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot specify both"));
+    }
+
+    #[test]
+    fn action_submit_rejects_empty_plan_id() {
+        let result = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+            "".to_string(),
+        ]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be empty"));
     }
 }
