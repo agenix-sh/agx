@@ -307,7 +307,7 @@ impl CandleBackend {
             "You are a fast task planner. Convert this instruction into a JSON task list.\n\
              Available tools: {}\n\
              Instruction: {}{}\n\
-             Output only valid JSON: {{\"plan\": [{{\"cmd\": \"tool-id\"}}, ...]}}",
+             Output only valid JSON: {{\"tasks\": [{{\"task_number\": 1, \"command\": \"tool-id\", \"args\": [], \"timeout_secs\": 300}}]}}",
             tools, safe_instruction, safe_input_info
         )
     }
@@ -342,7 +342,7 @@ impl CandleBackend {
              3. Error handling\n\
              4. Edge cases\n\
              \n\
-             Output improved JSON plan: {{\"plan\": [{{\"cmd\": \"tool-id\", \"args\": [...]}}]}}",
+             Output improved JSON plan: {{\"tasks\": [{{\"task_number\": 1, \"command\": \"tool-id\", \"args\": [], \"timeout_secs\": 300}}]}}",
             safe_instruction, existing_plan, tools
         )
     }
@@ -439,7 +439,7 @@ impl CandleBackend {
         let plan = WorkflowPlan::from_str(response)
             .map_err(|e| ModelError::ParseError(format!("Failed to parse plan JSON: {}", e)))?;
 
-        Ok(plan.plan)
+        Ok(plan.tasks)
     }
 }
 
@@ -724,10 +724,11 @@ mod tests {
         let context = PlanContext {
             tool_registry: vec![ToolInfo::new("ls", "list files")],
             existing_tasks: vec![PlanStep {
-                cmd: "ls".to_string(),
+                task_number: 1,
+                command: "ls".to_string(),
                 args: vec![],
-                input_from_step: None,
-                timeout_secs: None,
+                timeout_secs: 300,
+                input_from_task: None,
             }],
             ..Default::default()
         };
@@ -744,7 +745,7 @@ mod tests {
 
         // Just verify the structure matches what we expect for Delta
         assert!(!context.existing_tasks.is_empty());
-        assert_eq!(context.existing_tasks[0].cmd, "ls");
+        assert_eq!(context.existing_tasks[0].command, "ls");
     }
 
     #[test]

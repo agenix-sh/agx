@@ -18,7 +18,7 @@ impl Executor {
         input: &InputSummary,
         registry: &ToolRegistry,
     ) -> Result<(), String> {
-        if plan.plan.is_empty() {
+        if plan.tasks.is_empty() {
             return io::stdout()
                 .write_all(&input.content)
                 .map_err(|error| format!("failed to write to STDOUT: {error}"));
@@ -26,13 +26,13 @@ impl Executor {
 
         let mut data = input.content.clone();
 
-        for step in &plan.plan {
+        for task in &plan.tasks {
             let tool = registry
-                .find_by_id(&step.cmd)
-                .ok_or_else(|| format!("unknown tool in plan: {}", step.cmd))?;
+                .find_by_id(&task.command)
+                .ok_or_else(|| format!("unknown tool in plan: {}", task.command))?;
 
             let mut child = Command::new(tool.command);
-            child.args(&step.args);
+            child.args(&task.args);
 
             let mut child = child
                 .stdin(Stdio::piped())

@@ -61,27 +61,27 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
         cli::PlanCommand::Validate => {
             let plan = storage.load()?;
 
-            if plan.plan.is_empty() {
+            if plan.tasks.is_empty() {
                 return Err("plan is empty. Use `PLAN add` to generate tasks first.".to_string());
             }
 
             logging::info(&format!(
-                "PLAN validate request with {} step(s)",
-                plan.plan.len()
+                "PLAN validate request with {} task(s)",
+                plan.tasks.len()
             ));
 
             // Run Delta validation on current plan
-            let original_steps = plan.plan.len();
+            let original_steps = plan.tasks.len();
             let validated_plan = run_delta_validation(&plan, &storage)?;
-            let validated_steps = validated_plan.plan.len();
+            let validated_steps = validated_plan.tasks.len();
 
             // Show diff summary
             let diff_summary = compute_plan_diff(&plan, &validated_plan);
 
             print_json(json!({
                 "status": "ok",
-                "original_steps": original_steps,
-                "validated_steps": validated_steps,
+                "original_tasks": original_steps,
+                "validated_tasks": validated_steps,
                 "changes": diff_summary,
                 "plan_path": storage.path().display().to_string()
             }));
@@ -97,8 +97,8 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
             let mut plan = storage.load()?;
 
             logging::info(&format!(
-                "PLAN submit request with {} step(s)",
-                plan.plan.len()
+                "PLAN submit request with {} task(s)",
+                plan.tasks.len()
             ));
 
             // Auto-validate with Delta if AGX_AUTO_VALIDATE is set
@@ -106,8 +106,8 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                 logging::info("Auto-validation enabled, running Delta validation before submit");
                 plan = run_delta_validation(&plan, &storage)?;
                 logging::info(&format!(
-                    "Auto-validation complete: {} step(s)",
-                    plan.plan.len()
+                    "Auto-validation complete: {} task(s)",
+                    plan.tasks.len()
                 ));
             }
 
@@ -161,22 +161,37 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
 
             let parsed = plan_output.parse()?;
             let executable_plan = parsed.normalize_for_execution();
-            let added_steps = executable_plan.plan.len();
+            let added_tasks = executable_plan.tasks.len();
 
             let mut buffer = storage.load()?;
-            buffer.plan.extend(executable_plan.plan.into_iter());
+            let offset = buffer.tasks.len() as u32;
+            buffer.tasks.extend(executable_plan.tasks.into_iter());
+
+            // Renumber newly added tasks by offset and adjust their input_from_task references
+            // Existing tasks keep their numbers unchanged
+            if offset > 0 {
+                for task in buffer.tasks.iter_mut().skip(offset as usize) {
+                    let old_number = task.task_number;
+                    task.task_number = old_number + offset;
+
+                    // Adjust input_from_task references within newly added tasks
+                    if let Some(old_ref) = task.input_from_task {
+                        task.input_from_task = Some(old_ref + offset);
+                    }
+                }
+            }
 
             logging::info(&format!(
-                "PLAN add appended {added_steps} step(s); buffer now has {} step(s)",
-                buffer.plan.len()
+                "PLAN add appended {added_tasks} task(s); buffer now has {} task(s)",
+                buffer.tasks.len()
             ));
 
             storage.save(&buffer)?;
 
             print_json(json!({
                 "status": "ok",
-                "added_steps": added_steps,
-                "total_steps": buffer.plan.len(),
+                "added_tasks": added_tasks,
+                "total_tasks": buffer.tasks.len(),
                 "plan_path": storage.path().display().to_string()
             }));
         }
@@ -223,8 +238,8 @@ fn compute_plan_diff(
     original: &plan::WorkflowPlan,
     validated: &plan::WorkflowPlan,
 ) -> serde_json::Value {
-    let original_cmds: Vec<String> = original.plan.iter().map(|s| s.cmd.clone()).collect();
-    let validated_cmds: Vec<String> = validated.plan.iter().map(|s| s.cmd.clone()).collect();
+    let original_cmds: Vec<String> = original.tasks.iter().map(|t| t.command.clone()).collect();
+    let validated_cmds: Vec<String> = validated.tasks.iter().map(|t| t.command.clone()).collect();
 
     let added: Vec<String> = validated_cmds
         .iter()
@@ -238,18 +253,18 @@ fn compute_plan_diff(
         .cloned()
         .collect();
 
-    let step_count_change = validated.plan.len() as i32 - original.plan.len() as i32;
+    let task_count_change = validated.tasks.len() as i32 - original.tasks.len() as i32;
 
     json!({
         "added": added,
         "removed": removed,
-        "step_count_change": step_count_change,
-        "summary": if step_count_change > 0 {
-            format!("Added {} step(s)", step_count_change)
-        } else if step_count_change < 0 {
-            format!("Removed {} step(s)", -step_count_change)
+        "task_count_change": task_count_change,
+        "summary": if task_count_change > 0 {
+            format!("Added {} task(s)", task_count_change)
+        } else if task_count_change < 0 {
+            format!("Removed {} task(s)", -task_count_change)
         } else {
-            "No change in step count".to_string()
+            "No change in task count".to_string()
         }
     })
 }
@@ -276,7 +291,7 @@ fn run_delta_validation(
         DELTA_VALIDATION_INSTRUCTION,
         &input,
         &registry,
-        &current_plan.plan,
+        &current_plan.tasks,
     )?;
 
     logging::info(&format!("Delta validation output: {}", plan_output.raw_json));
@@ -288,8 +303,8 @@ fn run_delta_validation(
     storage.save(&validated_plan)?;
 
     logging::info(&format!(
-        "Delta validation complete: {} step(s)",
-        validated_plan.plan.len()
+        "Delta validation complete: {} task(s)",
+        validated_plan.tasks.len()
     ));
 
     Ok(validated_plan)
@@ -381,25 +396,99 @@ mod tests {
     #[test]
     fn build_job_envelope_assigns_ids_and_validates() {
         let plan = plan::WorkflowPlan {
-            plan: vec![
+            plan_id: None,
+            plan_description: None,
+            tasks: vec![
                 plan::PlanStep {
-                    cmd: "sort".into(),
+                    task_number: 1,
+                    command: "sort".into(),
                     args: vec![],
-                    input_from_step: None,
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: None,
                 },
                 plan::PlanStep {
-                    cmd: "uniq".into(),
+                    task_number: 2,
+                    command: "uniq".into(),
                     args: vec![],
-                    input_from_step: Some(1),
-                    timeout_secs: None,
+                    timeout_secs: 300,
+                    input_from_task: Some(1),
                 },
             ],
         };
 
         let env = build_job_envelope(plan).expect("envelope should build");
-        assert_eq!(env.steps.len(), 2);
+        assert_eq!(env.tasks.len(), 2);
         assert!(!env.job_id.is_empty());
         assert!(!env.plan_id.is_empty());
+    }
+
+    #[test]
+    fn plan_append_preserves_task_dependencies() {
+        // Test that appending new tasks preserves input_from_task references
+        // Simulates PLAN add workflow where new tasks are appended to existing buffer
+
+        // Existing buffer with dependencies: task 2 depends on task 1
+        let mut buffer = plan::WorkflowPlan {
+            plan_id: None,
+            plan_description: None,
+            tasks: vec![
+                plan::PlanStep {
+                    task_number: 1,
+                    command: "cat".into(),
+                    args: vec![],
+                    timeout_secs: 300,
+                    input_from_task: None,
+                },
+                plan::PlanStep {
+                    task_number: 2,
+                    command: "sort".into(),
+                    args: vec![],
+                    timeout_secs: 300,
+                    input_from_task: Some(1), // Depends on task 1
+                },
+            ],
+        };
+
+        // New plan to append (normalized, so starts at 1)
+        let new_plan = plan::WorkflowPlan {
+            plan_id: None,
+            plan_description: None,
+            tasks: vec![plan::PlanStep {
+                task_number: 1,
+                command: "uniq".into(),
+                args: vec![],
+                timeout_secs: 300,
+                input_from_task: None,
+            }],
+        };
+
+        // Simulate PLAN add logic
+        let offset = buffer.tasks.len() as u32;
+        buffer.tasks.extend(new_plan.tasks.into_iter());
+
+        if offset > 0 {
+            for task in buffer.tasks.iter_mut().skip(offset as usize) {
+                let old_number = task.task_number;
+                task.task_number = old_number + offset;
+
+                if let Some(old_ref) = task.input_from_task {
+                    task.input_from_task = Some(old_ref + offset);
+                }
+            }
+        }
+
+        // Verify results
+        assert_eq!(buffer.tasks.len(), 3);
+        assert_eq!(buffer.tasks[0].task_number, 1);
+        assert_eq!(buffer.tasks[0].command, "cat");
+        assert_eq!(buffer.tasks[0].input_from_task, None);
+
+        assert_eq!(buffer.tasks[1].task_number, 2);
+        assert_eq!(buffer.tasks[1].command, "sort");
+        assert_eq!(buffer.tasks[1].input_from_task, Some(1)); // Still points to task 1 ✓
+
+        assert_eq!(buffer.tasks[2].task_number, 3); // Renumbered from 1 to 3
+        assert_eq!(buffer.tasks[2].command, "uniq");
+        assert_eq!(buffer.tasks[2].input_from_task, None);
     }
 }
