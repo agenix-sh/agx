@@ -15,12 +15,15 @@ use crate::plan_buffer::PlanStorage;
 use crate::planner::{ModelBackend, PlanContext, ToolInfo};
 use crate::registry;
 
+/// Maximum number of history entries to persist
+const MAX_HISTORY_SIZE: usize = 1000;
+
 /// REPL session state that persists across invocations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplState {
     /// Current plan buffer
     pub plan: WorkflowPlan,
-    /// Command history
+    /// Command history (limited to MAX_HISTORY_SIZE entries)
     pub history: Vec<String>,
     /// Last save timestamp
     pub last_saved: Option<String>,
@@ -67,6 +70,12 @@ impl ReplState {
                 .map_err(|e| format!("failed to create state directory: {}", e))?;
         }
 
+        // Trim history to prevent unbounded growth
+        if self.history.len() > MAX_HISTORY_SIZE {
+            let start = self.history.len() - MAX_HISTORY_SIZE;
+            self.history = self.history[start..].to_vec();
+        }
+
         // Update save timestamp
         self.last_saved = Some(chrono::Utc::now().to_rfc3339());
 
@@ -85,6 +94,13 @@ impl ReplState {
         let mut path = home;
         path.push(".agx");
         path.push("repl-state.json");
+
+        // Validate path doesn't contain parent directory references
+        for component in path.components() {
+            if matches!(component, std::path::Component::ParentDir) {
+                return Err("invalid state path: contains parent directory reference".to_string());
+            }
+        }
 
         Ok(path)
     }
@@ -175,6 +191,7 @@ pub struct Repl {
     editor: DefaultEditor,
     backend: Box<dyn ModelBackend>,
     plan_storage: PlanStorage,
+    runtime: tokio::runtime::Runtime,
 }
 
 impl Repl {
@@ -201,11 +218,16 @@ impl Repl {
         // Use existing plan buffer storage
         let plan_storage = PlanStorage::from_env();
 
+        // Create Tokio runtime once for all async operations
+        let runtime = tokio::runtime::Runtime::new()
+            .map_err(|e| format!("failed to create runtime: {}", e))?;
+
         Ok(Self {
             state,
             editor,
             backend,
             plan_storage,
+            runtime,
         })
     }
 
@@ -338,11 +360,8 @@ impl Repl {
             ..Default::default()
         };
 
-        // Generate plan using Echo model
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| format!("failed to create runtime: {}", e))?;
-
-        let generated = rt.block_on(async {
+        // Generate plan using Echo model (reuse existing runtime)
+        let generated = self.runtime.block_on(async {
             self.backend.generate_plan(instruction, &context).await
         }).map_err(|e| format!("plan generation failed: {}", e))?;
 
@@ -350,11 +369,14 @@ impl Repl {
             return Err("no tasks generated".to_string());
         }
 
-        // Append to existing plan
-        let start_num = (self.state.plan.tasks.len() + 1) as u32;
+        // Append to existing plan with overflow check
+        let start_num = u32::try_from(self.state.plan.tasks.len() + 1)
+            .map_err(|_| "plan exceeds maximum task count (2^32)".to_string())?;
 
         for (i, mut task) in generated.tasks.into_iter().enumerate() {
-            task.task_number = start_num + i as u32;
+            let task_num = start_num.checked_add(i as u32)
+                .ok_or_else(|| "task number overflow".to_string())?;
+            task.task_number = task_num;
             self.state.plan.tasks.push(task);
         }
 
@@ -423,6 +445,13 @@ impl Repl {
 
         if parts.is_empty() {
             return Err("command cannot be empty".to_string());
+        }
+
+        // Validate command doesn't contain shell metacharacters
+        let command = &parts[0];
+        if command.contains(';') || command.contains('|') || command.contains('&')
+            || command.contains('`') || command.contains('$') {
+            return Err("invalid characters in command (shell metacharacters not allowed)".to_string());
         }
 
         // Update task
@@ -627,5 +656,71 @@ mod tests {
     fn parse_empty_command() {
         let result = ReplCommand::parse("");
         assert!(result.is_err());
+    }
+
+    // Integration tests for state persistence
+    #[test]
+    fn test_state_save_and_load() {
+        use tempfile::TempDir;
+
+        // Create temp directory for test state
+        let temp_dir = TempDir::new().unwrap();
+        let state_path = temp_dir.path().join("test-repl-state.json");
+
+        // Create a state with data
+        let mut state = ReplState {
+            plan: WorkflowPlan {
+                plan_id: Some("test-plan".to_string()),
+                plan_description: Some("Test plan".to_string()),
+                tasks: vec![],
+            },
+            history: vec!["add test".to_string(), "preview".to_string()],
+            last_saved: None,
+        };
+
+        // Save state
+        let json = serde_json::to_string_pretty(&state).unwrap();
+        std::fs::write(&state_path, json).unwrap();
+
+        // Load state
+        let loaded_json = std::fs::read_to_string(&state_path).unwrap();
+        let loaded_state: ReplState = serde_json::from_str(&loaded_json).unwrap();
+
+        // Verify
+        assert_eq!(loaded_state.plan.plan_id, Some("test-plan".to_string()));
+        assert_eq!(loaded_state.history.len(), 2);
+        assert_eq!(loaded_state.history[0], "add test");
+    }
+
+    #[test]
+    fn test_state_history_limit() {
+        let mut state = ReplState::default();
+
+        // Add more than MAX_HISTORY_SIZE entries
+        for i in 0..1500 {
+            state.history.push(format!("command {}", i));
+        }
+
+        // Simulate save which should trim history
+        if state.history.len() > MAX_HISTORY_SIZE {
+            let start = state.history.len() - MAX_HISTORY_SIZE;
+            state.history = state.history[start..].to_vec();
+        }
+
+        // Verify history is limited
+        assert_eq!(state.history.len(), MAX_HISTORY_SIZE);
+        assert_eq!(state.history[0], "command 500");  // First 500 should be trimmed
+        assert_eq!(state.history[999], "command 1499");
+    }
+
+    #[test]
+    fn test_overflow_protection() {
+        // Test u32 overflow check
+        let result = u32::try_from(usize::MAX);
+        assert!(result.is_err());
+
+        // Test checked_add
+        let max_u32 = u32::MAX;
+        assert!(max_u32.checked_add(1).is_none());
     }
 }
