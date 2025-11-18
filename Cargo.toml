@@ -30,5 +30,8 @@ candle-transformers = "0.9"
 candle-nn = "0.9"
 tokenizers = "0.22"
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.dev.package.ggml-sys]
 opt-level = 3
