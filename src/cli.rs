@@ -5,6 +5,7 @@ AGX - Agentic planner CLI (Phase 1)\n\
 \n\
 Usage:\n\
     agx [OPTIONS] PLAN <subcommand>\n\
+    agx [OPTIONS] ACTION submit --plan-id <ID> [--input <json>] [--inputs-file <path>]\n\
     agx [OPTIONS] JOBS list [--json]\n\
     agx [OPTIONS] WORKERS list [--json]\n\
     agx [OPTIONS] QUEUE stats [--json]\n\
@@ -15,6 +16,12 @@ PLAN subcommands:\n\
     PLAN validate            Run Delta model validation on current plan.\n\
     PLAN preview             Pretty-print the current JSON plan buffer.\n\
     PLAN submit              Validate the plan and submit to AGQ.\n\
+\n\
+ACTION subcommands:\n\
+    ACTION submit            Execute a plan with data inputs.\n\
+      --plan-id <ID>         Plan ID to execute (required).\n\
+      --input <json>         Inline JSON input data.\n\
+      --inputs-file <path>   Path to file containing JSON input data.\n\
 \n\
 Ops commands:\n\
     JOBS list                List jobs from AGQ (add --json for machine output).\n\
@@ -42,6 +49,7 @@ Environment variables:\n\
 #[derive(Debug, Clone)]
 pub enum Command {
     Plan(PlanCommand),
+    Action(ActionCommand),
     Ops(OpsCommand),
 }
 
@@ -55,11 +63,22 @@ pub enum PlanCommand {
 }
 
 #[derive(Debug, Clone)]
+pub enum ActionCommand {
+    Submit {
+        plan_id: String,
+        input: Option<String>,
+        inputs_file: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub enum OpsCommand {
     Jobs { json: bool },
     Workers { json: bool },
     Queue { json: bool },
 }
+
+#[derive(Debug)]
 pub struct CliConfig {
     pub command: Option<Command>,
     pub show_help: bool,
@@ -135,6 +154,7 @@ fn parse_command(tokens: &[String]) -> Result<Command, String> {
 
     match kind.as_str() {
         "PLAN" => parse_plan_command(&tokens[1..]),
+        "ACTION" => parse_action_command(&tokens[1..]),
         "JOBS" | "WORKERS" | "QUEUE" => parse_ops_command(&tokens),
         _ => Err(format!(
             "unknown command: {}. Run `agx --help` for usage.",
@@ -201,6 +221,66 @@ fn parse_plan_command(tokens: &[String]) -> Result<Command, String> {
         }
         _ => Err(format!(
             "unknown PLAN subcommand: {}. Expected new/add/validate/preview/submit.",
+            tokens[0]
+        )),
+    }
+}
+
+fn parse_action_command(tokens: &[String]) -> Result<Command, String> {
+    if tokens.is_empty() {
+        return Err("ACTION requires a subcommand (submit).".to_string());
+    }
+
+    let sub = tokens[0].to_lowercase();
+
+    match sub.as_str() {
+        "submit" => {
+            let mut plan_id = None;
+            let mut input = None;
+            let mut inputs_file = None;
+            let mut i = 1;
+
+            while i < tokens.len() {
+                match tokens[i].as_str() {
+                    "--plan-id" => {
+                        if i + 1 >= tokens.len() {
+                            return Err("--plan-id requires a value".to_string());
+                        }
+                        plan_id = Some(tokens[i + 1].clone());
+                        i += 2;
+                    }
+                    "--input" => {
+                        if i + 1 >= tokens.len() {
+                            return Err("--input requires a JSON value".to_string());
+                        }
+                        input = Some(tokens[i + 1].clone());
+                        i += 2;
+                    }
+                    "--inputs-file" => {
+                        if i + 1 >= tokens.len() {
+                            return Err("--inputs-file requires a path".to_string());
+                        }
+                        inputs_file = Some(tokens[i + 1].clone());
+                        i += 2;
+                    }
+                    other => {
+                        return Err(format!("unexpected argument: {}", other));
+                    }
+                }
+            }
+
+            let plan_id = plan_id.ok_or_else(|| {
+                "ACTION submit requires --plan-id. See `agx --help`.".to_string()
+            })?;
+
+            Ok(Command::Action(ActionCommand::Submit {
+                plan_id,
+                input,
+                inputs_file,
+            }))
+        }
+        _ => Err(format!(
+            "unknown ACTION subcommand: {}. Expected submit.",
             tokens[0]
         )),
     }
@@ -352,5 +432,112 @@ mod tests {
             "--json".to_string(),
         ]);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn parse_action_submit_with_plan_id() {
+        let config = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+            "plan-123".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Action(ActionCommand::Submit {
+                plan_id,
+                input,
+                inputs_file,
+            })) => {
+                assert_eq!(plan_id, "plan-123");
+                assert_eq!(input, None);
+                assert_eq!(inputs_file, None);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_action_submit_with_input() {
+        let config = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+            "plan-123".to_string(),
+            "--input".to_string(),
+            "{\"key\":\"value\"}".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Action(ActionCommand::Submit {
+                plan_id,
+                input,
+                inputs_file,
+            })) => {
+                assert_eq!(plan_id, "plan-123");
+                assert_eq!(input, Some("{\"key\":\"value\"}".to_string()));
+                assert_eq!(inputs_file, None);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_action_submit_with_inputs_file() {
+        let config = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+            "plan-123".to_string(),
+            "--inputs-file".to_string(),
+            "/path/to/inputs.json".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Action(ActionCommand::Submit {
+                plan_id,
+                input,
+                inputs_file,
+            })) => {
+                assert_eq!(plan_id, "plan-123");
+                assert_eq!(input, None);
+                assert_eq!(inputs_file, Some("/path/to/inputs.json".to_string()));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn action_submit_requires_plan_id() {
+        let result = CliConfig::from_args(vec!["ACTION".to_string(), "submit".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("--plan-id"));
+    }
+
+    #[test]
+    fn action_submit_plan_id_requires_value() {
+        let result = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+        ]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires a value"));
+    }
+
+    #[test]
+    fn action_submit_rejects_unknown_flags() {
+        let result = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+            "plan-123".to_string(),
+            "--unknown".to_string(),
+        ]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unexpected argument"));
     }
 }

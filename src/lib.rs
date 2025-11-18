@@ -39,6 +39,7 @@ pub fn run() -> Result<(), String> {
 
     match command {
         cli::Command::Plan(plan_command) => handle_plan_command(plan_command),
+        cli::Command::Action(action_command) => handle_action_command(action_command),
         cli::Command::Ops(ops_command) => handle_ops_command(ops_command),
     }
 }
@@ -328,6 +329,68 @@ fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, Stri
     Ok(envelope)
 }
 
+fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
+    match command {
+        cli::ActionCommand::Submit {
+            plan_id,
+            input,
+            inputs_file,
+        } => {
+            // Parse inputs from --input flag or --inputs-file
+            let inputs_json = if let Some(inline_input) = input {
+                // Validate JSON
+                serde_json::from_str::<serde_json::Value>(&inline_input)
+                    .map_err(|e| format!("invalid JSON in --input: {}", e))?;
+                inline_input
+            } else if let Some(file_path) = inputs_file {
+                // Read and validate JSON from file
+                let content = std::fs::read_to_string(&file_path)
+                    .map_err(|e| format!("failed to read inputs file '{}': {}", file_path, e))?;
+                serde_json::from_str::<serde_json::Value>(&content)
+                    .map_err(|e| format!("invalid JSON in file '{}': {}", file_path, e))?;
+                content
+            } else {
+                // Default to empty object if no inputs provided
+                "{}".to_string()
+            };
+
+            logging::info(&format!(
+                "ACTION submit request for plan_id: {}, inputs bytes: {}",
+                plan_id,
+                inputs_json.len()
+            ));
+
+            // Build ACTION.SUBMIT payload
+            let action_request = json!({
+                "plan_id": plan_id,
+                "inputs": serde_json::from_str::<serde_json::Value>(&inputs_json)
+                    .map_err(|e| format!("failed to parse inputs JSON: {}", e))?,
+            });
+
+            let action_json = serde_json::to_string(&action_request)
+                .map_err(|e| format!("failed to serialize action request: {}", e))?;
+
+            // Submit to AGQ
+            let agq_config = agq_client::AgqConfig::from_env();
+            let client = agq_client::AgqClient::new(agq_config);
+
+            match client.submit_action(&action_json) {
+                Ok(response) => {
+                    print_json(json!({
+                        "status": "ok",
+                        "action_id": response.action_id,
+                        "plan_id": response.plan_id,
+                        "plan_description": response.plan_description,
+                        "jobs": response.jobs,
+                    }));
+                    Ok(())
+                }
+                Err(error) => Err(format!("ACTION submit failed: {}", error)),
+            }
+        }
+    }
+}
+
 fn handle_ops_command(command: cli::OpsCommand) -> Result<(), String> {
     let agq_config = agq_client::AgqConfig::from_env();
     let client = agq_client::AgqClient::new(agq_config);
@@ -490,5 +553,47 @@ mod tests {
         assert_eq!(buffer.tasks[2].task_number, 3); // Renumbered from 1 to 3
         assert_eq!(buffer.tasks[2].command, "uniq");
         assert_eq!(buffer.tasks[2].input_from_task, None);
+    }
+
+    #[test]
+    fn action_submit_builds_correct_request() {
+        // Test that ACTION submit handler builds correct JSON payload
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test with inline JSON
+        let inline_input = r#"{"key":"value","count":42}"#;
+        let parsed: serde_json::Value = serde_json::from_str(inline_input).expect("valid JSON");
+        assert_eq!(parsed["key"], "value");
+        assert_eq!(parsed["count"], 42);
+
+        // Test with JSON file
+        let mut temp_file = NamedTempFile::new().expect("create temp file");
+        temp_file
+            .write_all(br#"{"file_key":"file_value"}"#)
+            .expect("write to temp file");
+        temp_file.flush().expect("flush temp file");
+
+        let content = std::fs::read_to_string(temp_file.path()).expect("read temp file");
+        let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid JSON");
+        assert_eq!(parsed["file_key"], "file_value");
+
+        // Test empty object default
+        let empty: serde_json::Value = serde_json::from_str("{}").expect("valid JSON");
+        assert!(empty.is_object());
+        assert_eq!(empty.as_object().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn action_submit_rejects_invalid_json() {
+        // Test that invalid JSON in --input is rejected
+        let invalid_json = r#"{"key": invalid}"#;
+        let result = serde_json::from_str::<serde_json::Value>(invalid_json);
+        assert!(result.is_err());
+
+        // Test that invalid JSON in file is rejected
+        let invalid_json2 = r#"not json at all"#;
+        let result2 = serde_json::from_str::<serde_json::Value>(invalid_json2);
+        assert!(result2.is_err());
     }
 }

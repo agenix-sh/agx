@@ -81,6 +81,29 @@ impl AgqClient {
         }
     }
 
+    pub fn submit_action(&self, action_json: &str) -> Result<ActionEnvelope, String> {
+        let mut reader = self.connect_and_auth()?;
+
+        let submit = resp_array(&["ACTION.SUBMIT", action_json]);
+        {
+            let stream = reader.get_mut();
+            stream
+                .write_all(&submit)
+                .map_err(|e| format!("failed to send ACTION.SUBMIT: {e}"))?;
+        }
+
+        let response = read_resp_value(&mut reader)?;
+
+        match response {
+            RespValue::BulkString(s) => {
+                serde_json::from_str(&s)
+                    .map_err(|e| format!("failed to parse ACTION.SUBMIT response: {e}"))
+            }
+            RespValue::Error(msg) => Err(format!("AGQ error: {msg}")),
+            other => Err(format!("unexpected AGQ response: {:?}", other)),
+        }
+    }
+
     pub fn list_jobs(&self) -> Result<OpsResponse, String> {
         self.simple_query("JOBS.LIST", OpsResponse::Jobs)
     }
@@ -397,5 +420,75 @@ mod tests {
         let back: ActionEnvelope = serde_json::from_str(&json).expect("deserialize action");
         assert_eq!(back.jobs.len(), 2);
         assert_eq!(back.plan_description.as_deref(), Some("desc"));
+    }
+
+    #[test]
+    fn submits_action_and_parses_response() {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
+
+            // Expect AUTH
+            let auth_req = read_resp_value(&mut reader).expect("read auth request");
+            match auth_req {
+                RespValue::Array(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert_eq!(items[0], RespValue::BulkString("AUTH".to_string()));
+                }
+                other => panic!("unexpected auth request: {:?}", other),
+            }
+
+            // Send OK for AUTH
+            reader
+                .get_mut()
+                .write_all(b"+OK\r\n")
+                .expect("write auth ok");
+
+            // Expect ACTION.SUBMIT
+            let submit_req = read_resp_value(&mut reader).expect("read submit");
+            match submit_req {
+                RespValue::Array(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert_eq!(
+                        items[0],
+                        RespValue::BulkString("ACTION.SUBMIT".to_string())
+                    );
+                }
+                other => panic!("unexpected submit request: {:?}", other),
+            }
+
+            // Respond with bulk string containing ActionEnvelope JSON
+            let response_json = r#"{"action_id":"act-123","plan_id":"plan-456","plan_description":null,"jobs":["job-1","job-2"]}"#;
+            let response_bytes = format!("${}\r\n{}\r\n", response_json.len(), response_json);
+            reader
+                .get_mut()
+                .write_all(response_bytes.as_bytes())
+                .expect("failed to write response");
+        });
+
+        let client = AgqClient::new(AgqConfig {
+            addr: addr.to_string(),
+            session_key: Some("secret".to_string()),
+            timeout: Duration::from_secs(2),
+        });
+
+        let action_request = r#"{"plan_id":"plan-456","inputs":{}}"#;
+        let result = client
+            .submit_action(action_request)
+            .expect("submit should succeed");
+
+        assert_eq!(result.action_id, "act-123");
+        assert_eq!(result.plan_id, "plan-456");
+        assert_eq!(result.jobs.len(), 2);
+        assert_eq!(result.jobs[0], "job-1");
+        assert_eq!(result.jobs[1], "job-2");
+
+        server.join().unwrap();
     }
 }
