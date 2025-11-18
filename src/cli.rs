@@ -295,6 +295,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_plan_validate_command() {
+        let config = CliConfig::from_args(vec!["PLAN".to_string(), "validate".to_string()])
+            .expect("valid");
+
+        match config.command {
+            Some(Command::Plan(PlanCommand::Validate)) => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_validate_no_extra_args() {
+        let result = CliConfig::from_args(vec![
+            "PLAN".to_string(),
+            "validate".to_string(),
+            "extra".to_string(),
+        ]);
+        match result {
+            Err(msg) => assert!(msg.contains("unexpected argument after `PLAN validate`")),
+            Ok(_) => panic!("Expected error but got Ok"),
+        }
+    }
+
+    #[test]
     fn parse_jobs_list_with_json_flag() {
         let config = CliConfig::from_args(vec![
             "JOBS".to_string(),

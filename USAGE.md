@@ -124,14 +124,41 @@ For complex plans, use Echo for initial generation and Delta for validation:
 echo "complex-data.csv" | ./target/release/agx plan add "analyze and report"
 
 # 2. Validate and refine with Delta (thorough)
-export AGX_MODEL_ROLE=delta
-export AGX_DELTA_MODEL="$HOME/.agx/models/delta/Mistral-Nemo-Instruct-2407.Q4_K_M.gguf"
+./target/release/agx plan validate
 
-# Delta reviews the existing plan and suggests improvements
-./target/release/agx plan preview | ./target/release/agx plan add "validate and optimize"
+# Output shows what Delta changed:
+# {
+#   "changes": {
+#     "added": ["error_handling", "logging"],
+#     "removed": [],
+#     "step_count_change": 2,
+#     "summary": "Added 2 step(s)"
+#   },
+#   "validated_steps": 5
+# }
 
-# 3. Submit refined plan
+# 3. Preview refined plan
+./target/release/agx plan preview
+
+# 4. Submit validated plan
 ./target/release/agx plan submit
+```
+
+### Auto-Validation Before Submit
+
+Enable automatic Delta validation before every submit:
+
+```bash
+# Enable auto-validation
+export AGX_AUTO_VALIDATE=true
+
+# Generate plan with Echo
+./target/release/agx plan new
+echo "data.csv" | ./target/release/agx plan add "process this file"
+
+# Submit automatically runs Delta validation first
+./target/release/agx plan submit
+# Delta validation runs automatically before submission
 ```
 
 ### Operations (Requires AGQ)
@@ -305,7 +332,8 @@ export AGX_DEVICE=metal
 ```bash
 # Planning commands
 agx plan new                    # Create new plan
-agx plan add "instruction"      # Add tasks to plan
+agx plan add "instruction"      # Add tasks to plan (Echo)
+agx plan validate               # Run Delta validation
 agx plan preview                # View current plan
 agx plan submit                 # Submit to AGQ
 
