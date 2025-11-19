@@ -134,7 +134,7 @@ impl ReplCommand {
         let cmd = parts[0].to_lowercase();
 
         match cmd.as_str() {
-            "add" => {
+            "add" | "a" => {
                 let instruction = parts.get(1)
                     .ok_or_else(|| "add requires an instruction".to_string())?
                     .trim();
@@ -145,8 +145,8 @@ impl ReplCommand {
 
                 Ok(ReplCommand::Add(instruction.to_string()))
             }
-            "preview" | "show" | "list" => Ok(ReplCommand::Preview),
-            "edit" => {
+            "preview" | "show" | "list" | "p" => Ok(ReplCommand::Preview),
+            "edit" | "e" => {
                 let num_str = parts.get(1)
                     .ok_or_else(|| "edit requires a step number".to_string())?
                     .trim();
@@ -160,7 +160,7 @@ impl ReplCommand {
 
                 Ok(ReplCommand::Edit(num))
             }
-            "remove" | "delete" | "rm" => {
+            "remove" | "delete" | "rm" | "r" => {
                 let num_str = parts.get(1)
                     .ok_or_else(|| "remove requires a step number".to_string())?
                     .trim();
@@ -174,11 +174,11 @@ impl ReplCommand {
 
                 Ok(ReplCommand::Remove(num))
             }
-            "clear" | "reset" | "new" => Ok(ReplCommand::Clear),
-            "validate" => Ok(ReplCommand::Validate),
-            "submit" => Ok(ReplCommand::Submit),
+            "clear" | "reset" | "new" | "c" => Ok(ReplCommand::Clear),
+            "validate" | "v" => Ok(ReplCommand::Validate),
+            "submit" | "s" => Ok(ReplCommand::Submit),
             "save" => Ok(ReplCommand::Save),
-            "help" | "?" => Ok(ReplCommand::Help),
+            "help" | "?" | "h" => Ok(ReplCommand::Help),
             "quit" | "exit" | "q" => Ok(ReplCommand::Quit),
             _ => Err(format!("unknown command: {}. Type 'help' for available commands", cmd)),
         }
@@ -526,23 +526,30 @@ impl Repl {
 
     /// Show help text
     fn cmd_help(&self) {
-        println!("AGX REPL Commands:");
+        println!("AGX Interactive REPL v{}", env!("CARGO_PKG_VERSION"));
         println!();
-        println!("  add <instruction>     Generate and append plan steps");
-        println!("  preview               Show current plan");
-        println!("  edit <num>            Modify a specific step");
-        println!("  remove <num>          Delete a specific step");
-        println!("  clear                 Reset the plan");
-        println!("  validate              Run Delta model validation");
-        println!("  submit                Submit plan to AGQ");
-        println!("  save                  Manually save session");
-        println!("  help                  Show this help");
-        println!("  quit                  Exit REPL");
+        println!("Commands:");
+        println!("  [a]dd <instruction>    Generate and append plan steps");
+        println!("  [p]review              Show current plan");
+        println!("  [e]dit <num>           Modify a specific step");
+        println!("  [r]emove <num>         Delete a specific step");
+        println!("  [c]lear                Reset the plan");
         println!();
-        println!("Keyboard shortcuts:");
-        println!("  Ctrl-G                Enter vi mode for editing");
-        println!("  Ctrl-C                Cancel current input");
-        println!("  Ctrl-D                Exit REPL");
+        println!("Plan Actions:");
+        println!("  [v]alidate             Run Delta model validation");
+        println!("  [s]ubmit               Submit plan to AGQ");
+        println!("  save                   Manually save session");
+        println!();
+        println!("Session:");
+        println!("  [h]elp                 Show this help");
+        println!("  [q]uit                 Exit REPL");
+        println!();
+        println!("Keyboard Shortcuts:");
+        println!("  Ctrl-G                 Enter vi mode for editing");
+        println!("  Ctrl-C                 Cancel current input");
+        println!("  Ctrl-D                 Exit REPL");
+        println!();
+        println!("Tip: Type the full command or just the first letter (e.g., 'a' or 'add')");
         println!();
     }
 
@@ -656,6 +663,55 @@ mod tests {
     fn parse_empty_command() {
         let result = ReplCommand::parse("");
         assert!(result.is_err());
+    }
+
+    // Shortcut tests (AGX-057)
+    #[test]
+    fn parse_add_shortcut() {
+        let cmd = ReplCommand::parse("a sort numbers").unwrap();
+        assert_eq!(cmd, ReplCommand::Add("sort numbers".to_string()));
+    }
+
+    #[test]
+    fn parse_preview_shortcut() {
+        assert_eq!(ReplCommand::parse("p").unwrap(), ReplCommand::Preview);
+    }
+
+    #[test]
+    fn parse_edit_shortcut() {
+        let cmd = ReplCommand::parse("e 2").unwrap();
+        assert_eq!(cmd, ReplCommand::Edit(2));
+    }
+
+    #[test]
+    fn parse_remove_shortcut() {
+        let cmd = ReplCommand::parse("r 1").unwrap();
+        assert_eq!(cmd, ReplCommand::Remove(1));
+    }
+
+    #[test]
+    fn parse_clear_shortcut() {
+        assert_eq!(ReplCommand::parse("c").unwrap(), ReplCommand::Clear);
+    }
+
+    #[test]
+    fn parse_validate_shortcut() {
+        assert_eq!(ReplCommand::parse("v").unwrap(), ReplCommand::Validate);
+    }
+
+    #[test]
+    fn parse_submit_shortcut() {
+        assert_eq!(ReplCommand::parse("s").unwrap(), ReplCommand::Submit);
+    }
+
+    #[test]
+    fn parse_help_shortcut() {
+        assert_eq!(ReplCommand::parse("h").unwrap(), ReplCommand::Help);
+    }
+
+    #[test]
+    fn parse_quit_shortcut() {
+        assert_eq!(ReplCommand::parse("q").unwrap(), ReplCommand::Quit);
     }
 
     // Integration tests for state persistence
