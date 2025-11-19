@@ -47,16 +47,20 @@ The REPL provides:
 
 ### REPL Commands
 
-- `add "<instruction>"` — Generate and append plan steps using Echo model
-- `preview` — Show current plan
-- `edit <num>` — Modify a specific step
-- `remove <num>` — Delete a specific step
-- `clear` — Reset the plan
-- `validate` — Run Delta model validation (coming in AGX-045/046)
-- `submit` — Submit plan to AGQ (use `agx PLAN submit` for now)
+All commands support single-letter shortcuts shown in brackets:
+
+- `[a]dd "<instruction>"` — Generate and append plan steps using Echo model
+- `[p]review` — Show current plan
+- `[e]dit <num>` — Modify a specific step
+- `[r]emove <num>` — Delete a specific step
+- `[c]lear` — Reset the plan
+- `[v]alidate` — Run Delta model validation (coming in AGX-045/046)
+- `[s]ubmit` — Submit plan to AGQ (use `agx PLAN submit` for now)
 - `save` — Manually save session
-- `help` — Show available commands
-- `quit` — Exit REPL
+- `[h]elp` — Show available commands
+- `[q]uit` — Exit REPL
+
+**Tip**: Type either the full command or just the first letter (e.g., `a` or `add`)
 
 ### Keyboard Shortcuts
 
@@ -114,30 +118,38 @@ PLAN submit now wraps the full plan into a job envelope so all steps run on a si
 # Enter interactive mode
 agx
 
-# In the REPL:
-agx (0)> add "convert PDF to text"
+# In the REPL (using shortcuts):
+agx (0)> a "convert PDF to text"
 🤖 Generating plan steps...
 ✓ Added 2 task(s)
 
-agx (2)> preview
+agx (2)> p
 📋 Current plan (2 tasks):
 
   1. pdf-to-text input.pdf
   2. save-output output.txt
 
-agx (2)> edit 2
+agx (2)> e 2
 Editing task 2:
   Current: save-output output.txt
 
   New command> write-file output.txt
 ✓ Updated task 2
 
-agx (2)> submit
+agx (2)> h
+AGX Interactive REPL v0.1.0
+
+Commands:
+  [a]dd <instruction>    Generate and append plan steps
+  [p]review              Show current plan
+  ...
+
+agx (2)> s
 📤 Submitting plan to AGQ...
 ⚠️  Submit via REPL not yet fully integrated
    Use 'agx PLAN submit' for now
 
-agx (2)> quit
+agx (2)> q
 Saving session...
 Goodbye!
 ```
