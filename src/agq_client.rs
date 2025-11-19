@@ -44,6 +44,14 @@ pub enum OpsResponse {
     QueueStats(Vec<String>),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanSummary {
+    pub plan_id: String,
+    pub description: Option<String>,
+    pub task_count: usize,
+    pub created_at: Option<String>,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionEnvelope {
@@ -132,6 +140,56 @@ impl AgqClient {
 
     pub fn queue_stats(&self) -> Result<OpsResponse, String> {
         self.simple_query("QUEUE.STATS", OpsResponse::QueueStats)
+    }
+
+    pub fn list_plans(&self) -> Result<Vec<PlanSummary>, String> {
+        let mut reader = self.connect_and_auth()?;
+        let command = resp_array(&["PLAN.LIST"]);
+        {
+            let stream = reader.get_mut();
+            stream
+                .write_all(&command)
+                .map_err(|e| format!("failed to send PLAN.LIST: {e}"))?;
+        }
+
+        let response = read_resp_value(&mut reader)?;
+        match response {
+            RespValue::Array(items) => {
+                let mut plans = Vec::new();
+                for item in items {
+                    if let RespValue::BulkString(json_str) = item {
+                        let summary: PlanSummary = serde_json::from_str(&json_str)
+                            .map_err(|e| format!("failed to parse plan summary: {e}"))?;
+                        plans.push(summary);
+                    }
+                }
+                Ok(plans)
+            }
+            RespValue::Error(msg) => Err(format!("AGQ error: {msg}")),
+            other => Err(format!("unexpected AGQ response: {:?}", other)),
+        }
+    }
+
+    pub fn get_plan(&self, plan_id: &str) -> Result<crate::plan::WorkflowPlan, String> {
+        let mut reader = self.connect_and_auth()?;
+        let command = resp_array(&["PLAN.GET", plan_id]);
+        {
+            let stream = reader.get_mut();
+            stream
+                .write_all(&command)
+                .map_err(|e| format!("failed to send PLAN.GET: {e}"))?;
+        }
+
+        let response = read_resp_value(&mut reader)?;
+        match response {
+            RespValue::BulkString(json_str) => {
+                let plan: crate::plan::WorkflowPlan = serde_json::from_str(&json_str)
+                    .map_err(|e| format!("failed to parse plan: {e}"))?;
+                Ok(plan)
+            }
+            RespValue::Error(msg) => Err(format!("AGQ error: {msg}")),
+            other => Err(format!("unexpected AGQ response: {:?}", other)),
+        }
     }
 
     fn simple_query<F>(&self, command: &str, wrap: F) -> Result<OpsResponse, String>

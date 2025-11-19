@@ -244,6 +244,56 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                 "plan_path": storage.path().display().to_string()
             }));
         }
+        cli::PlanCommand::List { json } => {
+            let agq_config = agq_client::AgqConfig::from_env();
+            let client = agq_client::AgqClient::new(agq_config);
+
+            match client.list_plans() {
+                Ok(plans) => {
+                    if json {
+                        print_json(json!({
+                            "plans": plans
+                        }));
+                    } else {
+                        if plans.is_empty() {
+                            println!("No plans found");
+                        } else {
+                            println!("\nPLANS ({}):", plans.len());
+                            for plan in plans {
+                                let desc = plan.description.unwrap_or_else(|| "(no description)".to_string());
+                                let created = plan.created_at.unwrap_or_else(|| "unknown".to_string());
+                                println!("  {} | {} tasks | {} | {}",
+                                    plan.plan_id,
+                                    plan.task_count,
+                                    desc,
+                                    created
+                                );
+                            }
+                            println!();
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("failed to list plans: {}", e));
+                }
+            }
+        }
+        cli::PlanCommand::Get { plan_id } => {
+            let agq_config = agq_client::AgqConfig::from_env();
+            let client = agq_client::AgqClient::new(agq_config);
+
+            match client.get_plan(&plan_id) {
+                Ok(plan) => {
+                    print_json(json!({
+                        "plan_id": plan_id,
+                        "plan": plan
+                    }));
+                }
+                Err(e) => {
+                    return Err(format!("failed to get plan: {}", e));
+                }
+            }
+        }
     }
 
     Ok(())
