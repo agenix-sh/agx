@@ -1,4 +1,5 @@
-const DISPLAY_VERSION: &str = "0.1";
+// Version from Cargo.toml - automatically synchronized with releases
+const DISPLAY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const HELP_TEXT: &str = "\
 AGX - Agentic planner CLI (Phase 1)\n\
