@@ -99,14 +99,15 @@ $ agx PLAN submit
    Plan ID: plan_abc123def456
    Tasks: 5
 
-Use with: agx ACTION submit --plan-id plan_abc123def456 --input '...'
+Use with: agx ACTION submit --plan-id plan_abc123def456
+         (optional: --input '{...}' or --inputs-file <path>)
 ```
 
 For machine-readable output, use `--json`:
 
 ```bash
 $ agx PLAN submit --json
-{"plan_id":"plan_abc123def456","job_id":"job_xyz789","task_count":5,"status":"stored"}
+{"plan_id":"plan_abc123def456","job_id":"job_xyz789","task_count":5,"status":"submitted"}
 ```
 
 ## CI/CD and Contribution Guide

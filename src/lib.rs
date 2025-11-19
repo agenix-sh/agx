@@ -173,14 +173,15 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                             "plan_id": plan_id,
                             "job_id": submission.job_id,
                             "task_count": task_count,
-                            "status": "stored"
+                            "status": "submitted"
                         }));
                     } else {
                         println!("✅ Plan submitted successfully");
                         println!("   Plan ID: {}", plan_id);
                         println!("   Tasks: {}", task_count);
                         println!();
-                        println!("Use with: agx ACTION submit --plan-id {} --input '...'", plan_id);
+                        println!("Use with: agx ACTION submit --plan-id {}", plan_id);
+                        println!("         (optional: --input '{{...}}' or --inputs-file <path>)");
                     }
                 }
                 Err(error) => {
