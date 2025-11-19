@@ -157,10 +157,18 @@ impl AgqClient {
             RespValue::Array(items) => {
                 let mut plans = Vec::new();
                 for item in items {
-                    if let RespValue::BulkString(json_str) = item {
-                        let summary: PlanSummary = serde_json::from_str(&json_str)
-                            .map_err(|e| format!("failed to parse plan summary: {e}"))?;
-                        plans.push(summary);
+                    match item {
+                        RespValue::BulkString(json_str) => {
+                            let summary: PlanSummary = serde_json::from_str(&json_str)
+                                .map_err(|e| format!("failed to parse plan summary: {e}"))?;
+                            plans.push(summary);
+                        }
+                        other => {
+                            return Err(format!(
+                                "unexpected item type in PLAN.LIST response: {:?}",
+                                other
+                            ));
+                        }
                     }
                 }
                 Ok(plans)
@@ -171,6 +179,25 @@ impl AgqClient {
     }
 
     pub fn get_plan(&self, plan_id: &str) -> Result<crate::plan::WorkflowPlan, String> {
+        // Validate plan_id to prevent RESP injection and ensure reasonable length
+        if !plan_id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(
+                "invalid plan_id: must contain only alphanumeric characters, underscore, or dash"
+                    .to_string(),
+            );
+        }
+
+        if plan_id.is_empty() {
+            return Err("plan_id cannot be empty".to_string());
+        }
+
+        if plan_id.len() > 128 {
+            return Err("plan_id too long (max 128 characters)".to_string());
+        }
+
         let mut reader = self.connect_and_auth()?;
         let command = resp_array(&["PLAN.GET", plan_id]);
         {
@@ -590,5 +617,212 @@ mod tests {
         let result = invalid_envelope.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("jobs_created (3) != job_ids.len() (2)"));
+    }
+
+    #[test]
+    fn list_plans_returns_summaries() {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
+
+            // Handle AUTH
+            let _auth_req = read_resp_value(&mut reader);
+            reader.get_mut().write_all(b"+OK\r\n").unwrap();
+
+            // Expect PLAN.LIST
+            let list_req = read_resp_value(&mut reader).expect("read list request");
+            match list_req {
+                RespValue::Array(items) => {
+                    assert_eq!(items.len(), 1);
+                    assert_eq!(items[0], RespValue::BulkString("PLAN.LIST".to_string()));
+                }
+                other => panic!("unexpected list request: {:?}", other),
+            }
+
+            // Respond with array of plan summaries
+            let summary1 = r#"{"plan_id":"plan_123","description":"Test plan","task_count":3,"created_at":"2025-01-19"}"#;
+            let summary2 = r#"{"plan_id":"plan_456","description":null,"task_count":1,"created_at":null}"#;
+            let response = format!(
+                "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                summary1.len(),
+                summary1,
+                summary2.len(),
+                summary2
+            );
+            reader.get_mut().write_all(response.as_bytes()).unwrap();
+        });
+
+        let config = AgqConfig {
+            addr: format!("127.0.0.1:{}", addr.port()),
+            session_key: Some("secret".to_string()),
+            timeout: Duration::from_secs(5),
+        };
+        let client = AgqClient::new(config);
+
+        let result = client.list_plans();
+        server.join().unwrap();
+
+        assert!(result.is_ok());
+        let plans = result.unwrap();
+        assert_eq!(plans.len(), 2);
+        assert_eq!(plans[0].plan_id, "plan_123");
+        assert_eq!(plans[0].description, Some("Test plan".to_string()));
+        assert_eq!(plans[0].task_count, 3);
+        assert_eq!(plans[1].plan_id, "plan_456");
+    }
+
+    #[test]
+    fn list_plans_handles_empty_response() {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
+            let _auth_req = read_resp_value(&mut reader);
+            reader.get_mut().write_all(b"+OK\r\n").unwrap();
+            let _list_req = read_resp_value(&mut reader);
+
+            // Respond with empty array
+            reader.get_mut().write_all(b"*0\r\n").unwrap();
+        });
+
+        let config = AgqConfig {
+            addr: format!("127.0.0.1:{}", addr.port()),
+            session_key: Some("secret".to_string()),
+            timeout: Duration::from_secs(5),
+        };
+        let client = AgqClient::new(config);
+
+        let result = client.list_plans();
+        server.join().unwrap();
+
+        assert!(result.is_ok());
+        let plans = result.unwrap();
+        assert_eq!(plans.len(), 0);
+    }
+
+    #[test]
+    fn get_plan_returns_workflow_plan() {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
+            let _auth_req = read_resp_value(&mut reader);
+            reader.get_mut().write_all(b"+OK\r\n").unwrap();
+
+            // Expect PLAN.GET
+            let get_req = read_resp_value(&mut reader).expect("read get request");
+            match get_req {
+                RespValue::Array(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert_eq!(items[0], RespValue::BulkString("PLAN.GET".to_string()));
+                    assert_eq!(items[1], RespValue::BulkString("plan_abc123".to_string()));
+                }
+                other => panic!("unexpected get request: {:?}", other),
+            }
+
+            // Respond with bulk string plan JSON
+            let plan_json = r#"{"tasks":[{"task_number":1,"command":"echo","args":["hello"],"timeout_secs":300}]}"#;
+            let response = format!("${}\r\n{}\r\n", plan_json.len(), plan_json);
+            reader.get_mut().write_all(response.as_bytes()).unwrap();
+        });
+
+        let config = AgqConfig {
+            addr: format!("127.0.0.1:{}", addr.port()),
+            session_key: Some("secret".to_string()),
+            timeout: Duration::from_secs(5),
+        };
+        let client = AgqClient::new(config);
+
+        let result = client.get_plan("plan_abc123");
+        server.join().unwrap();
+
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        assert_eq!(plan.tasks.len(), 1);
+        assert_eq!(plan.tasks[0].command, "echo");
+    }
+
+    #[test]
+    fn get_plan_validates_plan_id() {
+        let config = AgqConfig {
+            addr: "127.0.0.1:6380".to_string(),
+            session_key: None,
+            timeout: Duration::from_secs(5),
+        };
+        let client = AgqClient::new(config);
+
+        // Test invalid characters
+        let result = client.get_plan("plan\n123");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid plan_id"));
+
+        // Test empty
+        let result = client.get_plan("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be empty"));
+
+        // Test too long
+        let long_id = "a".repeat(129);
+        let result = client.get_plan(&long_id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too long"));
+
+        // Test valid
+        let result = client.get_plan("plan_abc-123");
+        // Will fail to connect, but validation should pass
+        assert!(result.is_err());
+        assert!(!result.unwrap_err().contains("invalid plan_id"));
+    }
+
+    #[test]
+    fn get_plan_handles_agq_error() {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let mut stream = listener.accept().unwrap().0;
+            let mut reader = BufReader::new(&mut stream);
+            let _auth_req = read_resp_value(&mut reader);
+            reader.get_mut().write_all(b"+OK\r\n").unwrap();
+            let _get_req = read_resp_value(&mut reader);
+
+            // Respond with error (plan not found)
+            reader
+                .get_mut()
+                .write_all(b"-ERR plan not found\r\n")
+                .unwrap();
+        });
+
+        let config = AgqConfig {
+            addr: format!("127.0.0.1:{}", addr.port()),
+            session_key: Some("secret".to_string()),
+            timeout: Duration::from_secs(5),
+        };
+        let client = AgqClient::new(config);
+
+        let result = client.get_plan("plan_nonexistent");
+        server.join().unwrap();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("plan not found"));
     }
 }
