@@ -119,6 +119,13 @@ pub enum ReplCommand {
     Submit,
     Save,
 
+    // Plan operations (AGX-073)
+    PlanList,
+    PlanGet(String),  // plan-id
+
+    // Action operations (AGX-073)
+    ActionSubmit { plan_id: String, input: Option<String> },
+
     // Operational commands (AGX-058)
     JobList,
     WorkerList,
@@ -186,6 +193,39 @@ impl ReplCommand {
             "validate" | "v" => Ok(ReplCommand::Validate),
             "submit" | "s" => Ok(ReplCommand::Submit),
             "save" => Ok(ReplCommand::Save),
+
+            // Plan operations (AGX-073)
+            "plan" => {
+                let subparts = parts.get(1)
+                    .ok_or_else(|| "plan requires subcommand: list, get <id>".to_string())?
+                    .trim();
+
+                let subparts: Vec<&str> = subparts.splitn(2, ' ').collect();
+                match subparts[0] {
+                    "list" => Ok(ReplCommand::PlanList),
+                    "get" => {
+                        let plan_id = subparts.get(1)
+                            .ok_or_else(|| "plan get requires plan-id".to_string())?
+                            .trim()
+                            .to_string();
+                        Ok(ReplCommand::PlanGet(plan_id))
+                    }
+                    _ => Err(format!("unknown plan subcommand: {}. Use: plan list, plan get <id>", subparts[0]))
+                }
+            }
+
+            // Action operations (AGX-073)
+            "action" => {
+                let args = parts.get(1)
+                    .ok_or_else(|| "action requires plan-id".to_string())?
+                    .trim();
+
+                let args: Vec<&str> = args.splitn(2, ' ').collect();
+                let plan_id = args[0].to_string();
+                let input = args.get(1).map(|s| s.to_string());
+
+                Ok(ReplCommand::ActionSubmit { plan_id, input })
+            }
 
             // Operational commands (AGX-058)
             "jobs" | "j" => Ok(ReplCommand::JobList),
@@ -345,6 +385,22 @@ impl Repl {
             ReplCommand::Save => {
                 self.save_state()?;
                 println!("✓ Session saved");
+                Ok(false)
+            }
+
+            // Plan operations (AGX-073)
+            ReplCommand::PlanList => {
+                self.cmd_plan_list()?;
+                Ok(false)
+            }
+            ReplCommand::PlanGet(plan_id) => {
+                self.cmd_plan_get(&plan_id)?;
+                Ok(false)
+            }
+
+            // Action operations (AGX-073)
+            ReplCommand::ActionSubmit { plan_id, input } => {
+                self.cmd_action_submit(&plan_id, input.as_deref())?;
                 Ok(false)
             }
 
@@ -624,6 +680,136 @@ impl Repl {
         }
     }
 
+    /// List all plans from AGQ (AGX-073)
+    fn cmd_plan_list(&self) -> Result<(), String> {
+        use crate::agq_client::{AgqClient, AgqConfig};
+
+        let config = AgqConfig::from_env();
+        let client = AgqClient::new(config);
+
+        match client.list_plans() {
+            Ok(plans) => {
+                if plans.is_empty() {
+                    println!("No plans found");
+                } else {
+                    println!("\nPlans ({}):", plans.len());
+                    for plan in plans {
+                        let desc = plan.description.unwrap_or_else(|| "(no description)".to_string());
+                        println!("  {} ({} tasks) - {}", plan.plan_id, plan.task_count, desc);
+                    }
+                    println!();
+                }
+                Ok(())
+            }
+            Err(e) => Err(format!("failed to list plans: {}", e)),
+        }
+    }
+
+    /// Get a specific plan from AGQ (AGX-073)
+    fn cmd_plan_get(&self, plan_id: &str) -> Result<(), String> {
+        use crate::agq_client::{AgqClient, AgqConfig};
+
+        let config = AgqConfig::from_env();
+        let client = AgqClient::new(config);
+
+        match client.get_plan(plan_id) {
+            Ok(plan) => {
+                println!("\nPlan: {}", plan_id);
+                if plan.tasks.is_empty() {
+                    println!("  (no tasks)");
+                } else {
+                    println!("Tasks:");
+                    for task in &plan.tasks {
+                        let args_str = if task.args.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {}", task.args.join(" "))
+                        };
+                        println!("  {}. {}{}", task.task_number, task.command, args_str);
+                    }
+                }
+                println!();
+                Ok(())
+            }
+            Err(e) => Err(format!("failed to get plan: {}", e)),
+        }
+    }
+
+    /// Submit action to execute plan with input data (AGX-073)
+    fn cmd_action_submit(&self, plan_id: &str, input: Option<&str>) -> Result<(), String> {
+        use crate::agq_client::{AgqClient, AgqConfig};
+
+        // Validate plan-id format (same as CLI)
+        if !plan_id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(
+                "invalid plan-id: must contain only alphanumeric characters, underscore, or dash"
+                    .to_string(),
+            );
+        }
+
+        if plan_id.len() > 128 {
+            return Err("plan-id too long (max 128 characters)".to_string());
+        }
+
+        let config = AgqConfig::from_env();
+        let client = AgqClient::new(config);
+
+        // Step 1: Retrieve plan to validate it exists
+        match client.get_plan(plan_id) {
+            Ok(_) => {}, // Plan exists, continue
+            Err(e) => {
+                if e.contains("AGQ error") {
+                    return Err(format!("Error: Plan '{}' not found", plan_id));
+                } else {
+                    return Err(format!("Error: Cannot connect to AGQ: {}", e));
+                }
+            }
+        }
+
+        // Step 2: Parse input JSON
+        let inputs_array = if let Some(input_str) = input {
+            let single_input = serde_json::from_str::<serde_json::Value>(input_str)
+                .map_err(|e| format!("Error: Invalid input JSON: {}", e))?;
+            serde_json::json!([single_input])
+        } else {
+            serde_json::json!([])
+        };
+
+        // Step 3: Generate action_id
+        let action_id = format!("action_{}", uuid::Uuid::new_v4().simple());
+
+        // Step 4: Build ACTION.SUBMIT payload
+        let action_request = serde_json::json!({
+            "action_id": action_id,
+            "plan_id": plan_id,
+            "inputs": inputs_array,
+        });
+
+        let action_json = serde_json::to_string(&action_request)
+            .map_err(|e| format!("failed to serialize action request: {}", e))?;
+
+        // Step 5: Submit to AGQ
+        match client.submit_action(&action_json) {
+            Ok(response) => {
+                println!("✅ Action submitted successfully");
+                if let Some(job_id) = response.job_ids.first() {
+                    println!("Job ID: {}", job_id);
+                }
+                println!("Plan: {}", response.plan_id);
+                if let Some(input_val) = action_request.get("inputs").and_then(|v| v.get(0)) {
+                    if !input_val.is_array() || input_val.as_array().map_or(false, |a| !a.is_empty()) {
+                        println!("Input: {}", input_val);
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => Err(format!("ACTION submit failed: {}", e)),
+        }
+    }
+
     /// Show help text
     fn cmd_help(&self) {
         println!("AGX Interactive REPL v{}", env!("CARGO_PKG_VERSION"));
@@ -639,6 +825,14 @@ impl Repl {
         println!("  [v]alidate             Run Delta model validation");
         println!("  [s]ubmit               Submit plan to AGQ");
         println!("  save                   Manually save session");
+        println!();
+        println!("Plan Operations:");
+        println!("  plan list              List all stored plans from AGQ");
+        println!("  plan get <id>          View details of a specific plan");
+        println!();
+        println!("Action Operations:");
+        println!("  action <plan-id>       Execute plan (no input)");
+        println!("  action <plan-id> <json> Execute plan with input data");
         println!();
         println!("Operational Commands:");
         println!("  [j]obs                 List all jobs from AGQ");
@@ -914,5 +1108,65 @@ mod tests {
         // Test checked_add
         let max_u32 = u32::MAX;
         assert!(max_u32.checked_add(1).is_none());
+    }
+
+    // Plan operations tests (AGX-073)
+    #[test]
+    fn parse_plan_list_command() {
+        let cmd = ReplCommand::parse("plan list").unwrap();
+        assert_eq!(cmd, ReplCommand::PlanList);
+    }
+
+    #[test]
+    fn parse_plan_get_command() {
+        let cmd = ReplCommand::parse("plan get plan_abc123").unwrap();
+        assert_eq!(cmd, ReplCommand::PlanGet("plan_abc123".to_string()));
+    }
+
+    #[test]
+    fn plan_get_requires_plan_id() {
+        let result = ReplCommand::parse("plan get");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires plan-id"));
+    }
+
+    #[test]
+    fn plan_requires_subcommand() {
+        let result = ReplCommand::parse("plan");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires subcommand"));
+    }
+
+    #[test]
+    fn plan_rejects_unknown_subcommand() {
+        let result = ReplCommand::parse("plan invalid");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown plan subcommand"));
+    }
+
+    // Action operations tests (AGX-073)
+    #[test]
+    fn parse_action_command_no_input() {
+        let cmd = ReplCommand::parse("action plan_abc123").unwrap();
+        assert_eq!(cmd, ReplCommand::ActionSubmit {
+            plan_id: "plan_abc123".to_string(),
+            input: None
+        });
+    }
+
+    #[test]
+    fn parse_action_command_with_input() {
+        let cmd = ReplCommand::parse("action plan_abc123 {\"path\":\"/tmp\"}").unwrap();
+        assert_eq!(cmd, ReplCommand::ActionSubmit {
+            plan_id: "plan_abc123".to_string(),
+            input: Some("{\"path\":\"/tmp\"}".to_string())
+        });
+    }
+
+    #[test]
+    fn action_requires_plan_id() {
+        let result = ReplCommand::parse("action");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires plan-id"));
     }
 }

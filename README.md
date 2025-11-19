@@ -61,6 +61,14 @@ All commands support single-letter shortcuts shown in brackets:
 - `[s]ubmit` — Submit plan to AGQ (use `agx PLAN submit` for now)
 - `save` — Manually save session
 
+**Plan Operations:**
+- `plan list` — List all stored plans from AGQ
+- `plan get <id>` — View details of a specific plan
+
+**Action Operations:**
+- `action <plan-id>` — Execute plan (no input)
+- `action <plan-id> <json>` — Execute plan with input data
+
 **Operational Commands:**
 - `[j]obs` — List all jobs from AGQ
 - `[w]orkers` — List active workers
@@ -266,10 +274,25 @@ Queue Statistics:
   completed_jobs: 15
   workers: 2
 
-agx (2)> s
-📤 Submitting plan to AGQ...
-⚠️  Submit via REPL not yet fully integrated
-   Use 'agx PLAN submit' for now
+agx (2)> plan list
+Plans (2):
+  plan_abc123def456 (5 tasks) - Process log files
+  plan_xyz789ghi012 (3 tasks) - Backup database
+
+agx (2)> plan get plan_abc123def456
+Plan: plan_abc123def456
+Tasks:
+  1. grep ERROR app.log
+  2. wc -l
+  3. sort
+  4. uniq
+  5. tee results.txt
+
+agx (2)> action plan_abc123def456 {"path": "/var/log"}
+✅ Action submitted successfully
+Job ID: job_607bbd71ef8940d5ab53d174fcd6911a
+Plan: plan_abc123def456
+Input: {"path": "/var/log"}
 
 agx (2)> q
 Saving session...
