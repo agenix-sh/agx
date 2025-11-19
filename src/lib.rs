@@ -569,7 +569,8 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                             println!("Job ID: {}", job_id);
                         }
                         println!("Plan: {}", response.plan_id);
-                        if let Some(input_val) = inputs_array.get(0) {
+                        // Extract input from action_request to avoid potential move issues
+                        if let Some(input_val) = action_request.get("inputs").and_then(|v| v.get(0)) {
                             println!("Input: {}", input_val);
                         }
                         println!("Status: queued");
