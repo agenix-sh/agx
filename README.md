@@ -49,14 +49,24 @@ The REPL provides:
 
 All commands support single-letter shortcuts shown in brackets:
 
+**Plan Building:**
 - `[a]dd "<instruction>"` — Generate and append plan steps using Echo model
 - `[p]review` — Show current plan
 - `[e]dit <num>` — Modify a specific step
 - `[r]emove <num>` — Delete a specific step
 - `[c]lear` — Reset the plan
+
+**Plan Actions:**
 - `[v]alidate` — Run Delta model validation (coming in AGX-045/046)
 - `[s]ubmit` — Submit plan to AGQ (use `agx PLAN submit` for now)
 - `save` — Manually save session
+
+**Operational Commands:**
+- `[j]obs` — List all jobs from AGQ
+- `[w]orkers` — List active workers
+- `stats` / `queue` — Show queue statistics
+
+**Session:**
 - `[h]elp` — Show available commands
 - `[q]uit` — Exit REPL
 
@@ -143,6 +153,24 @@ Commands:
   [a]dd <instruction>    Generate and append plan steps
   [p]review              Show current plan
   ...
+
+agx (2)> j
+Jobs (3):
+  - job_abc123
+  - job_def456
+  - job_ghi789
+
+agx (2)> w
+Active Workers (2):
+  - worker-1 (idle)
+  - worker-2 (busy)
+
+agx (2)> stats
+Queue Statistics:
+  pending_jobs: 3
+  active_jobs: 1
+  completed_jobs: 15
+  workers: 2
 
 agx (2)> s
 📤 Submitting plan to AGQ...

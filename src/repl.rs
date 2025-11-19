@@ -109,6 +109,7 @@ impl ReplState {
 /// REPL command parsed from user input
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReplCommand {
+    // Plan building commands
     Add(String),
     Preview,
     Edit(usize),
@@ -117,6 +118,13 @@ pub enum ReplCommand {
     Validate,
     Submit,
     Save,
+
+    // Operational commands (AGX-058)
+    JobList,
+    WorkerList,
+    QueueStats,
+
+    // Session commands
     Help,
     Quit,
 }
@@ -178,6 +186,12 @@ impl ReplCommand {
             "validate" | "v" => Ok(ReplCommand::Validate),
             "submit" | "s" => Ok(ReplCommand::Submit),
             "save" => Ok(ReplCommand::Save),
+
+            // Operational commands (AGX-058)
+            "jobs" | "j" => Ok(ReplCommand::JobList),
+            "workers" | "w" => Ok(ReplCommand::WorkerList),
+            "stats" | "queue" => Ok(ReplCommand::QueueStats),
+
             "help" | "?" | "h" => Ok(ReplCommand::Help),
             "quit" | "exit" | "q" => Ok(ReplCommand::Quit),
             _ => Err(format!("unknown command: {}. Type 'help' for available commands", cmd)),
@@ -333,6 +347,21 @@ impl Repl {
                 println!("✓ Session saved");
                 Ok(false)
             }
+
+            // Operational commands (AGX-058)
+            ReplCommand::JobList => {
+                self.cmd_job_list()?;
+                Ok(false)
+            }
+            ReplCommand::WorkerList => {
+                self.cmd_worker_list()?;
+                Ok(false)
+            }
+            ReplCommand::QueueStats => {
+                self.cmd_queue_stats()?;
+                Ok(false)
+            }
+
             ReplCommand::Help => {
                 self.cmd_help();
                 Ok(false)
@@ -524,6 +553,77 @@ impl Repl {
         Ok(())
     }
 
+    /// List jobs from AGQ (AGX-058)
+    fn cmd_job_list(&self) -> Result<(), String> {
+        use crate::agq_client::{AgqClient, AgqConfig, OpsResponse};
+
+        let config = AgqConfig::from_env();
+        let client = AgqClient::new(config);
+
+        match client.list_jobs() {
+            Ok(OpsResponse::Jobs(jobs)) => {
+                if jobs.is_empty() {
+                    println!("No jobs found");
+                } else {
+                    println!("\nJobs ({}):", jobs.len());
+                    for job in jobs {
+                        println!("  - {}", job);
+                    }
+                    println!();
+                }
+                Ok(())
+            }
+            Ok(_) => Err("unexpected response from AGQ".to_string()),
+            Err(e) => Err(format!("failed to list jobs: {}", e)),
+        }
+    }
+
+    /// List workers from AGQ (AGX-058)
+    fn cmd_worker_list(&self) -> Result<(), String> {
+        use crate::agq_client::{AgqClient, AgqConfig, OpsResponse};
+
+        let config = AgqConfig::from_env();
+        let client = AgqClient::new(config);
+
+        match client.list_workers() {
+            Ok(OpsResponse::Workers(workers)) => {
+                if workers.is_empty() {
+                    println!("No active workers");
+                } else {
+                    println!("\nActive Workers ({}):", workers.len());
+                    for worker in workers {
+                        println!("  - {}", worker);
+                    }
+                    println!();
+                }
+                Ok(())
+            }
+            Ok(_) => Err("unexpected response from AGQ".to_string()),
+            Err(e) => Err(format!("failed to list workers: {}", e)),
+        }
+    }
+
+    /// Show queue statistics from AGQ (AGX-058)
+    fn cmd_queue_stats(&self) -> Result<(), String> {
+        use crate::agq_client::{AgqClient, AgqConfig, OpsResponse};
+
+        let config = AgqConfig::from_env();
+        let client = AgqClient::new(config);
+
+        match client.queue_stats() {
+            Ok(OpsResponse::QueueStats(stats)) => {
+                println!("\nQueue Statistics:");
+                for stat in stats {
+                    println!("  {}", stat);
+                }
+                println!();
+                Ok(())
+            }
+            Ok(_) => Err("unexpected response from AGQ".to_string()),
+            Err(e) => Err(format!("failed to get queue stats: {}", e)),
+        }
+    }
+
     /// Show help text
     fn cmd_help(&self) {
         println!("AGX Interactive REPL v{}", env!("CARGO_PKG_VERSION"));
@@ -539,6 +639,11 @@ impl Repl {
         println!("  [v]alidate             Run Delta model validation");
         println!("  [s]ubmit               Submit plan to AGQ");
         println!("  save                   Manually save session");
+        println!();
+        println!("Operational Commands:");
+        println!("  [j]obs                 List all jobs from AGQ");
+        println!("  [w]orkers              List active workers");
+        println!("  stats / queue          Show queue statistics");
         println!();
         println!("Session:");
         println!("  [h]elp                 Show this help");
@@ -712,6 +817,37 @@ mod tests {
     #[test]
     fn parse_quit_shortcut() {
         assert_eq!(ReplCommand::parse("q").unwrap(), ReplCommand::Quit);
+    }
+
+    // Operational command tests (AGX-058)
+    #[test]
+    fn parse_jobs_command() {
+        assert_eq!(ReplCommand::parse("jobs").unwrap(), ReplCommand::JobList);
+    }
+
+    #[test]
+    fn parse_jobs_shortcut() {
+        assert_eq!(ReplCommand::parse("j").unwrap(), ReplCommand::JobList);
+    }
+
+    #[test]
+    fn parse_workers_command() {
+        assert_eq!(ReplCommand::parse("workers").unwrap(), ReplCommand::WorkerList);
+    }
+
+    #[test]
+    fn parse_workers_shortcut() {
+        assert_eq!(ReplCommand::parse("w").unwrap(), ReplCommand::WorkerList);
+    }
+
+    #[test]
+    fn parse_stats_command() {
+        assert_eq!(ReplCommand::parse("stats").unwrap(), ReplCommand::QueueStats);
+    }
+
+    #[test]
+    fn parse_queue_command() {
+        assert_eq!(ReplCommand::parse("queue").unwrap(), ReplCommand::QueueStats);
     }
 
     // Integration tests for state persistence
