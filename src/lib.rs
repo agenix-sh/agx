@@ -464,12 +464,43 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
             plan_id,
             input,
             inputs_file,
+            json,
         } => {
-            // Parse and validate inputs from --input flag or --inputs-file
+            // Step 1: Validate plan_id format (prevent RESP injection)
+            if !plan_id
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                return Err(
+                    "invalid plan-id: must contain only alphanumeric characters, underscore, or dash"
+                        .to_string(),
+                );
+            }
+
+            if plan_id.len() > 128 {
+                return Err("plan-id too long (max 128 characters)".to_string());
+            }
+
+            // Step 2: Retrieve plan from AGQ using PLAN.GET
+            let agq_config = agq_client::AgqConfig::from_env();
+            let agq_addr = agq_config.addr.clone();
+            let client = agq_client::AgqClient::new(agq_config);
+
+            logging::info(&format!("Retrieving plan: {}", plan_id));
+
+            let _plan = client.get_plan(&plan_id).map_err(|e| {
+                if e.contains("AGQ error") {
+                    format!("Error: Plan '{}' not found", plan_id)
+                } else {
+                    format!("Error: Cannot connect to AGQ at {}: {}", agq_addr, e)
+                }
+            })?;
+
+            // Step 3: Plan exists, now parse and validate input
             let inputs_array = if let Some(inline_input) = input {
                 // Single input - wrap in array
                 let single_input = serde_json::from_str::<serde_json::Value>(&inline_input)
-                    .map_err(|e| format!("invalid JSON in --input: {}", e))?;
+                    .map_err(|e| format!("Error: Invalid input JSON: {}", e))?;
                 serde_json::json!([single_input])
             } else if let Some(file_path) = inputs_file {
                 // Validate path to prevent path traversal attacks
@@ -492,7 +523,7 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                 let content = std::fs::read_to_string(&file_path)
                     .map_err(|_| "failed to read inputs file: file not found or not accessible".to_string())?;
                 let value = serde_json::from_str::<serde_json::Value>(&content)
-                    .map_err(|_| "invalid JSON in inputs file".to_string())?;
+                    .map_err(|e| format!("Error: Invalid input JSON: {}", e))?;
 
                 // Validate it's an array
                 if !value.is_array() {
@@ -509,11 +540,11 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                 plan_id
             ));
 
-            // Generate action_id
+            // Step 4: Generate action_id
             let action_id = format!("action_{}", uuid::Uuid::new_v4().simple());
 
-            // Build ACTION.SUBMIT payload
-            let action_request = json!({
+            // Step 5: Build ACTION.SUBMIT payload
+            let action_request = serde_json::json!({
                 "action_id": action_id,
                 "plan_id": plan_id,
                 "inputs": inputs_array,
@@ -522,20 +553,27 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
             let action_json = serde_json::to_string(&action_request)
                 .map_err(|e| format!("failed to serialize action request: {}", e))?;
 
-            // Submit to AGQ
-            let agq_config = agq_client::AgqConfig::from_env();
-            let client = agq_client::AgqClient::new(agq_config);
-
+            // Step 6: Submit to AGQ
             match client.submit_action(&action_json) {
                 Ok(response) => {
-                    print_json(json!({
-                        "status": "ok",
-                        "action_id": response.action_id,
-                        "plan_id": response.plan_id,
-                        "plan_description": response.plan_description,
-                        "jobs_created": response.jobs_created,
-                        "job_ids": response.job_ids,
-                    }));
+                    // Step 7: Display result
+                    if json {
+                        print_json(serde_json::json!({
+                            "job_id": response.job_ids.first().unwrap_or(&String::from("")),
+                            "plan_id": response.plan_id,
+                            "status": "queued"
+                        }));
+                    } else {
+                        println!("Action submitted successfully");
+                        if let Some(job_id) = response.job_ids.first() {
+                            println!("Job ID: {}", job_id);
+                        }
+                        println!("Plan: {}", response.plan_id);
+                        if let Some(input_val) = inputs_array.get(0) {
+                            println!("Input: {}", input_val);
+                        }
+                        println!("Status: queued");
+                    }
                     Ok(())
                 }
                 Err(error) => Err(format!("ACTION submit failed: {}", error)),
@@ -771,5 +809,36 @@ mod tests {
 
         let result2 = validate_file_path("data/inputs.json");
         assert!(result2.is_ok());
+    }
+
+    #[test]
+    fn action_submit_validates_plan_id_format() {
+        // Valid plan IDs
+        assert!("plan_abc123"
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'));
+        assert!("plan-abc-123"
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'));
+
+        // Invalid plan IDs (should be rejected)
+        assert!(!"plan;DROP TABLE".chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-'));
+        assert!(!"plan\r\nSOME.COMMAND"
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'));
+        assert!(!"plan with spaces"
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'));
+    }
+
+    #[test]
+    fn action_submit_validates_plan_id_length() {
+        // Valid length
+        let valid = "a".repeat(128);
+        assert!(valid.len() <= 128);
+
+        // Invalid length
+        let invalid = "a".repeat(129);
+        assert!(invalid.len() > 128);
     }
 }

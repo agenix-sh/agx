@@ -148,6 +148,41 @@ $ agx PLAN get plan_abc123def456
 }
 ```
 
+## ACTION submit
+
+After creating and storing plans in AGQ, you can execute them with input data using ACTION submit:
+
+**Basic usage:**
+```bash
+# Submit action with input data
+$ agx ACTION submit --plan-id plan_abc123def456 --input '{"path": "/tmp"}'
+Action submitted successfully
+Job ID: job_xyz789abc012
+Plan: plan_abc123def456
+Input: {"path":"/tmp"}
+Status: queued
+```
+
+**Machine-readable format:**
+```bash
+$ agx ACTION submit --plan-id plan_abc123def456 --input '{"path": "/tmp"}' --json
+{"job_id":"job_xyz789abc012","plan_id":"plan_abc123def456","status":"queued"}
+```
+
+**Workflow:**
+1. Validates the plan-id format (alphanumeric, underscore, dash only)
+2. Retrieves the plan from AGQ using PLAN.GET
+3. Validates the plan exists (errors if not found)
+4. Parses and validates the input JSON
+5. Submits the action to AGQ, which creates jobs combining the plan with input data
+6. Returns the job-id for tracking execution
+
+**Error handling:**
+- Plan not found: `Error: Plan 'plan_xyz' not found`
+- Invalid JSON: `Error: Invalid input JSON: <parse error>`
+- AGQ connection failure: `Error: Cannot connect to AGQ at <address>: <error>`
+- Invalid plan-id: `invalid plan-id: must contain only alphanumeric characters, underscore, or dash`
+
 ## CI/CD and Contribution Guide
 
 - The full GitHub Actions matrix (macOS + Linux, build + tests + audit + coverage) is documented in `.github/CICD_SETUP.md`.

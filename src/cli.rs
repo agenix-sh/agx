@@ -7,7 +7,7 @@ AGX - Agentic planner CLI (Phase 1)\n\
 Usage:\n\
     agx [OPTIONS]            Start interactive REPL mode (default).\n\
     agx [OPTIONS] PLAN <subcommand>\n\
-    agx [OPTIONS] ACTION submit --plan-id <ID> [--input <json>] [--inputs-file <path>]\n\
+    agx [OPTIONS] ACTION submit --plan-id <ID> [--input <json>] [--inputs-file <path>] [--json]\n\
     agx [OPTIONS] JOBS list [--json]\n\
     agx [OPTIONS] WORKERS list [--json]\n\
     agx [OPTIONS] QUEUE stats [--json]\n\
@@ -26,6 +26,7 @@ ACTION subcommands:\n\
       --plan-id <ID>         Plan ID to execute (required, non-empty).\n\
       --input <json>         Inline JSON input data (mutually exclusive with --inputs-file).\n\
       --inputs-file <path>   Path to file containing JSON input data (mutually exclusive with --input).\n\
+      --json                 Output result as JSON (default: human-readable).\n\
 \n\
 Ops commands:\n\
     JOBS list                List jobs from AGQ (add --json for machine output).\n\
@@ -75,6 +76,7 @@ pub enum ActionCommand {
         plan_id: String,
         input: Option<String>,
         inputs_file: Option<String>,
+        json: bool,
     },
 }
 
@@ -290,6 +292,7 @@ fn parse_action_command(tokens: &[String]) -> Result<Command, String> {
             let mut plan_id = None;
             let mut input = None;
             let mut inputs_file = None;
+            let mut json = false;
             let mut i = 1;
 
             while i < tokens.len() {
@@ -315,6 +318,10 @@ fn parse_action_command(tokens: &[String]) -> Result<Command, String> {
                         inputs_file = Some(tokens[i + 1].clone());
                         i += 2;
                     }
+                    "--json" => {
+                        json = true;
+                        i += 1;
+                    }
                     other => {
                         return Err(format!("unexpected argument: {}", other));
                     }
@@ -339,6 +346,7 @@ fn parse_action_command(tokens: &[String]) -> Result<Command, String> {
                 plan_id,
                 input,
                 inputs_file,
+                json,
             }))
         }
         _ => Err(format!(
@@ -616,10 +624,12 @@ mod tests {
                 plan_id,
                 input,
                 inputs_file,
+                json,
             })) => {
                 assert_eq!(plan_id, "plan-123");
                 assert_eq!(input, None);
                 assert_eq!(inputs_file, None);
+                assert_eq!(json, false);
             }
             other => panic!("unexpected command: {other:?}"),
         }
@@ -642,10 +652,12 @@ mod tests {
                 plan_id,
                 input,
                 inputs_file,
+                json,
             })) => {
                 assert_eq!(plan_id, "plan-123");
                 assert_eq!(input, Some("{\"key\":\"value\"}".to_string()));
                 assert_eq!(inputs_file, None);
+                assert_eq!(json, false);
             }
             other => panic!("unexpected command: {other:?}"),
         }
@@ -668,10 +680,12 @@ mod tests {
                 plan_id,
                 input,
                 inputs_file,
+                json,
             })) => {
                 assert_eq!(plan_id, "plan-123");
                 assert_eq!(input, None);
                 assert_eq!(inputs_file, Some("/path/to/inputs.json".to_string()));
+                assert_eq!(json, false);
             }
             other => panic!("unexpected command: {other:?}"),
         }
@@ -734,5 +748,34 @@ mod tests {
         ]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn parse_action_submit_with_json_flag() {
+        let config = CliConfig::from_args(vec![
+            "ACTION".to_string(),
+            "submit".to_string(),
+            "--plan-id".to_string(),
+            "plan-123".to_string(),
+            "--input".to_string(),
+            "{\"path\":\"/tmp\"}".to_string(),
+            "--json".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Action(ActionCommand::Submit {
+                plan_id,
+                input,
+                inputs_file,
+                json,
+            })) => {
+                assert_eq!(plan_id, "plan-123");
+                assert_eq!(input, Some("{\"path\":\"/tmp\"}".to_string()));
+                assert_eq!(inputs_file, None);
+                assert_eq!(json, true);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 }
