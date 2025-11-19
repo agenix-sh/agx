@@ -825,4 +825,80 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("plan not found"));
     }
+
+    #[test]
+    fn action_submit_full_workflow() {
+        // Integration test for full ACTION submit workflow:
+        // 1. Client calls PLAN.GET to retrieve plan
+        // 2. Client calls ACTION.SUBMIT with plan-id and inputs
+        // 3. Server responds with ActionEnvelope containing job_ids
+
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            // First connection: PLAN.GET
+            {
+                let mut stream = listener.accept().unwrap().0;
+                let mut reader = BufReader::new(&mut stream);
+
+                // AUTH request
+                let _auth_req = read_resp_value(&mut reader);
+                reader.get_mut().write_all(b"+OK\r\n").unwrap();
+
+                // PLAN.GET request
+                let _get_req = read_resp_value(&mut reader);
+                let plan_response = r#"{"tasks":[{"task_number":1,"command":"echo","args":["hello"],"timeout_secs":300}]}"#;
+                reader
+                    .get_mut()
+                    .write_all(format!("${}\r\n{}\r\n", plan_response.len(), plan_response).as_bytes())
+                    .unwrap();
+            }
+
+            // Second connection: ACTION.SUBMIT
+            {
+                let mut stream = listener.accept().unwrap().0;
+                let mut reader = BufReader::new(&mut stream);
+
+                // AUTH request
+                let _auth_req = read_resp_value(&mut reader);
+                reader.get_mut().write_all(b"+OK\r\n").unwrap();
+
+                // ACTION.SUBMIT request
+                let _submit_req = read_resp_value(&mut reader);
+                let action_response = r#"{"action_id":"action_123","plan_id":"plan_abc","plan_description":"test","jobs_created":1,"job_ids":["job_xyz789"]}"#;
+                reader
+                    .get_mut()
+                    .write_all(format!("${}\r\n{}\r\n", action_response.len(), action_response).as_bytes())
+                    .unwrap();
+            }
+        });
+
+        let config = AgqConfig {
+            addr: format!("127.0.0.1:{}", addr.port()),
+            session_key: Some("secret".to_string()),
+            timeout: Duration::from_secs(5),
+        };
+        let client = AgqClient::new(config);
+
+        // Step 1: Get plan (validates it exists)
+        let plan_result = client.get_plan("plan_abc");
+        assert!(plan_result.is_ok());
+
+        // Step 2: Submit action with plan-id and inputs
+        let action_json = r#"{"action_id":"action_123","plan_id":"plan_abc","inputs":[{"key":"value"}]}"#;
+        let submit_result = client.submit_action(action_json);
+
+        server.join().unwrap();
+
+        assert!(submit_result.is_ok());
+        let response = submit_result.unwrap();
+        assert_eq!(response.plan_id, "plan_abc");
+        assert_eq!(response.jobs_created, 1);
+        assert_eq!(response.job_ids.len(), 1);
+        assert_eq!(response.job_ids[0], "job_xyz789");
+    }
 }

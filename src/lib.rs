@@ -12,6 +12,9 @@ pub mod repl;
 
 use serde_json::json;
 
+// Security: Maximum allowed length for plan_id to prevent abuse
+const MAX_PLAN_ID_LENGTH: usize = 128;
+
 pub fn run() -> Result<(), String> {
     let mut config = cli::CliConfig::from_env()?;
 
@@ -477,8 +480,11 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                 );
             }
 
-            if plan_id.len() > 128 {
-                return Err("plan-id too long (max 128 characters)".to_string());
+            if plan_id.len() > MAX_PLAN_ID_LENGTH {
+                return Err(format!(
+                    "plan-id too long (max {} characters)",
+                    MAX_PLAN_ID_LENGTH
+                ));
             }
 
             // Step 2: Retrieve plan from AGQ using PLAN.GET
@@ -509,11 +515,11 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                 // Check file size before reading (10MB limit)
                 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
                 let metadata = std::fs::metadata(&file_path)
-                    .map_err(|_| "failed to read inputs file: file not found or not accessible".to_string())?;
+                    .map_err(|_| "Error: Failed to read inputs file: file not found or not accessible".to_string())?;
 
                 if metadata.len() > MAX_FILE_SIZE {
                     return Err(format!(
-                        "inputs file too large: {} bytes (max {} bytes)",
+                        "Error: Inputs file too large: {} bytes (max {} bytes)",
                         metadata.len(),
                         MAX_FILE_SIZE
                     ));
@@ -521,13 +527,13 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
 
                 // Read and parse file
                 let content = std::fs::read_to_string(&file_path)
-                    .map_err(|_| "failed to read inputs file: file not found or not accessible".to_string())?;
+                    .map_err(|_| "Error: Failed to read inputs file: file not found or not accessible".to_string())?;
                 let value = serde_json::from_str::<serde_json::Value>(&content)
                     .map_err(|e| format!("Error: Invalid input JSON: {}", e))?;
 
                 // Validate it's an array
                 if !value.is_array() {
-                    return Err("--inputs-file must contain a JSON array of inputs".to_string());
+                    return Err("Error: --inputs-file must contain a JSON array of inputs".to_string());
                 }
                 value
             } else {
@@ -559,7 +565,7 @@ fn handle_action_command(command: cli::ActionCommand) -> Result<(), String> {
                     // Step 7: Display result
                     if json {
                         print_json(serde_json::json!({
-                            "job_id": response.job_ids.first().unwrap_or(&String::from("")),
+                            "job_id": response.job_ids.first().cloned().unwrap_or_default(),
                             "plan_id": response.plan_id,
                             "status": "queued"
                         }));
@@ -835,11 +841,40 @@ mod tests {
     #[test]
     fn action_submit_validates_plan_id_length() {
         // Valid length
-        let valid = "a".repeat(128);
-        assert!(valid.len() <= 128);
+        let valid = "a".repeat(MAX_PLAN_ID_LENGTH);
+        assert!(valid.len() <= MAX_PLAN_ID_LENGTH);
 
         // Invalid length
-        let invalid = "a".repeat(129);
-        assert!(invalid.len() > 128);
+        let invalid = "a".repeat(MAX_PLAN_ID_LENGTH + 1);
+        assert!(invalid.len() > MAX_PLAN_ID_LENGTH);
+    }
+
+    #[test]
+    fn action_submit_handles_empty_job_ids() {
+        // Test that empty job_ids array is handled gracefully
+        use crate::agq_client::ActionEnvelope;
+
+        let response = ActionEnvelope {
+            action_id: "action_123".to_string(),
+            plan_id: "plan_456".to_string(),
+            plan_description: Some("test plan".to_string()),
+            jobs_created: 0,
+            job_ids: vec![],
+        };
+
+        // Should not panic when accessing first job_id
+        let job_id = response.job_ids.first().cloned().unwrap_or_default();
+        assert_eq!(job_id, "");
+
+        // ActionEnvelope validation should fail for mismatched jobs_created vs job_ids.len()
+        let invalid_response = ActionEnvelope {
+            action_id: "action_123".to_string(),
+            plan_id: "plan_456".to_string(),
+            plan_description: Some("test plan".to_string()),
+            jobs_created: 1, // Mismatch: claims 1 job but job_ids is empty
+            job_ids: vec![],
+        };
+
+        assert!(invalid_response.validate().is_err());
     }
 }
