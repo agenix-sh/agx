@@ -85,9 +85,29 @@ For scripted workflows, use the traditional `PLAN` subcommands:
 1. `PLAN new` — start/reset the persisted plan buffer (defaults to `$TMPDIR/agx-plan.json`, override with `AGX_PLAN_PATH`).
 2. `PLAN add "<instruction>"` — capture a natural-language instruction, read STDIN when piped, run the configured planner backend, and append the generated steps to the buffer.
 3. `PLAN preview` — pretty-print the current JSON plan so it can be inspected before queueing.
-4. `PLAN submit` — validate the plan and send it to AGQ.
+4. `PLAN submit [--json]` — validate the plan and send it to AGQ. Returns the plan-id needed for ACTION submit.
 
 `PLAN add` can be run multiple times to iteratively build a workflow. Structured logs (`--debug`) show the instruction, input summary, tool registry snapshot, and the raw planner JSON to keep the pipeline auditable.
+
+### PLAN submit output
+
+By default, `PLAN submit` displays a human-readable success message with the plan-id:
+
+```bash
+$ agx PLAN submit
+✅ Plan submitted successfully
+   Plan ID: plan_abc123def456
+   Tasks: 5
+
+Use with: agx ACTION submit --plan-id plan_abc123def456 --input '...'
+```
+
+For machine-readable output, use `--json`:
+
+```bash
+$ agx PLAN submit --json
+{"plan_id":"plan_abc123def456","job_id":"job_xyz789","task_count":5,"status":"stored"}
+```
 
 ## CI/CD and Contribution Guide
 
@@ -104,7 +124,7 @@ For scripted workflows, use the traditional `PLAN` subcommands:
 - `AGQ_SESSION_KEY` — optional session key for AUTH
 - `AGQ_TIMEOUT_SECS` — network timeout in seconds (default: 5)
 
-On success, the CLI prints JSON including the `job_id` and writes metadata alongside the plan buffer for future Ops commands.
+On success, the CLI displays the `plan_id` (needed for ACTION submit) and `task_count`. When using `--json`, it outputs machine-readable JSON with `plan_id`, `job_id`, `task_count`, and `status`.
 
 ## Ops mode
 
