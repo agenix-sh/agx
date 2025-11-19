@@ -17,7 +17,7 @@ PLAN subcommands:\n\
     PLAN add \"<instruction>\"  Append planner-generated steps. Reads STDIN when piped.\n\
     PLAN validate            Run Delta model validation on current plan.\n\
     PLAN preview             Pretty-print the current JSON plan buffer.\n\
-    PLAN submit              Validate the plan and submit to AGQ.\n\
+    PLAN submit [--json]     Validate the plan and submit to AGQ.\n\
 \n\
 ACTION subcommands:\n\
     ACTION submit            Execute a plan with data inputs.\n\
@@ -62,7 +62,7 @@ pub enum PlanCommand {
     Add { instruction: String },
     Validate,
     Preview,
-    Submit,
+    Submit { json: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -203,14 +203,25 @@ fn parse_plan_command(tokens: &[String]) -> Result<Command, String> {
             Ok(Command::Plan(PlanCommand::Preview))
         }
         "submit" => {
-            if tokens.len() > 1 {
-                return Err(format!(
-                    "unexpected argument after `PLAN submit`: {}",
-                    tokens[1]
-                ));
+            let mut json = false;
+            let mut i = 1;
+
+            while i < tokens.len() {
+                match tokens[i].as_str() {
+                    "--json" => {
+                        json = true;
+                        i += 1;
+                    }
+                    _ => {
+                        return Err(format!(
+                            "unexpected argument after `PLAN submit`: {}",
+                            tokens[i]
+                        ));
+                    }
+                }
             }
 
-            Ok(Command::Plan(PlanCommand::Submit))
+            Ok(Command::Plan(PlanCommand::Submit { json }))
         }
         "add" => {
             if tokens.len() < 2 {
@@ -405,6 +416,45 @@ mod tests {
         ]);
         match result {
             Err(msg) => assert!(msg.contains("unexpected argument after `PLAN validate`")),
+            Ok(_) => panic!("Expected error but got Ok"),
+        }
+    }
+
+    #[test]
+    fn parse_plan_submit_without_json() {
+        let config =
+            CliConfig::from_args(vec!["PLAN".to_string(), "submit".to_string()]).expect("valid");
+
+        match config.command {
+            Some(Command::Plan(PlanCommand::Submit { json: false })) => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_plan_submit_with_json() {
+        let config = CliConfig::from_args(vec![
+            "PLAN".to_string(),
+            "submit".to_string(),
+            "--json".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Plan(PlanCommand::Submit { json: true })) => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_submit_rejects_unknown_flag() {
+        let result = CliConfig::from_args(vec![
+            "PLAN".to_string(),
+            "submit".to_string(),
+            "--unknown".to_string(),
+        ]);
+        match result {
+            Err(msg) => assert!(msg.contains("unexpected argument after `PLAN submit`")),
             Ok(_) => panic!("Expected error but got Ok"),
         }
     }

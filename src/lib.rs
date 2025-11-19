@@ -130,7 +130,7 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                 "plan": plan
             }));
         }
-        cli::PlanCommand::Submit => {
+        cli::PlanCommand::Submit { json } => {
             let mut plan = storage.load()?;
 
             logging::info(&format!(
@@ -149,6 +149,8 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
             }
 
             let job = build_job_envelope(plan)?;
+            let plan_id = job.plan_id.clone();
+            let task_count = job.tasks.len();
             let job_json = serde_json::to_string(&job)
                 .map_err(|error| format!("failed to serialize job for submission: {error}"))?;
 
@@ -166,11 +168,21 @@ fn handle_plan_command(command: cli::PlanCommand) -> Result<(), String> {
                     };
                     storage.save_submission_metadata(&metadata)?;
 
-                    print_json(json!({
-                        "status": "ok",
-                        "job_id": submission.job_id,
-                        "plan_path": storage.path().display().to_string()
-                    }));
+                    if json {
+                        print_json(json!({
+                            "plan_id": plan_id,
+                            "job_id": submission.job_id,
+                            "task_count": task_count,
+                            "status": "submitted"
+                        }));
+                    } else {
+                        println!("✅ Plan submitted successfully");
+                        println!("   Plan ID: {}", plan_id);
+                        println!("   Tasks: {}", task_count);
+                        println!();
+                        println!("Use with: agx ACTION submit --plan-id {}", plan_id);
+                        println!("         (optional: --input '{{...}}' or --inputs-file <path>)");
+                    }
                 }
                 Err(error) => {
                     return Err(format!("PLAN submit failed: {error}"));
