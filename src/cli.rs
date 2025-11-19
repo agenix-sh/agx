@@ -18,6 +18,8 @@ PLAN subcommands:\n\
     PLAN validate            Run Delta model validation on current plan.\n\
     PLAN preview             Pretty-print the current JSON plan buffer.\n\
     PLAN submit [--json]     Validate the plan and submit to AGQ.\n\
+    PLAN list [--json]       List all stored plans from AGQ.\n\
+    PLAN get <plan-id>       View details of a specific plan.\n\
 \n\
 ACTION subcommands:\n\
     ACTION submit            Execute a plan with data inputs.\n\
@@ -63,6 +65,8 @@ pub enum PlanCommand {
     Validate,
     Preview,
     Submit { json: bool },
+    List { json: bool },
+    Get { plan_id: String },
 }
 
 #[derive(Debug, Clone)]
@@ -231,8 +235,44 @@ fn parse_plan_command(tokens: &[String]) -> Result<Command, String> {
             let instruction = tokens[1..].join(" ");
             Ok(Command::Plan(PlanCommand::Add { instruction }))
         }
+        "list" => {
+            let mut json = false;
+            let mut i = 1;
+
+            while i < tokens.len() {
+                match tokens[i].as_str() {
+                    "--json" => {
+                        json = true;
+                        i += 1;
+                    }
+                    _ => {
+                        return Err(format!(
+                            "unexpected argument after `PLAN list`: {}",
+                            tokens[i]
+                        ));
+                    }
+                }
+            }
+
+            Ok(Command::Plan(PlanCommand::List { json }))
+        }
+        "get" => {
+            if tokens.len() < 2 {
+                return Err("PLAN get requires a plan-id.".to_string());
+            }
+
+            if tokens.len() > 2 {
+                return Err(format!(
+                    "unexpected argument after `PLAN get <plan-id>`: {}",
+                    tokens[2]
+                ));
+            }
+
+            let plan_id = tokens[1].clone();
+            Ok(Command::Plan(PlanCommand::Get { plan_id }))
+        }
         _ => Err(format!(
-            "unknown PLAN subcommand: {}. Expected new/add/validate/preview/submit.",
+            "unknown PLAN subcommand: {}. Expected new/add/validate/preview/submit/list/get.",
             tokens[0]
         )),
     }
@@ -455,6 +495,72 @@ mod tests {
         ]);
         match result {
             Err(msg) => assert!(msg.contains("unexpected argument after `PLAN submit`")),
+            Ok(_) => panic!("Expected error but got Ok"),
+        }
+    }
+
+    #[test]
+    fn parse_plan_list_without_json() {
+        let config =
+            CliConfig::from_args(vec!["PLAN".to_string(), "list".to_string()]).expect("valid");
+
+        match config.command {
+            Some(Command::Plan(PlanCommand::List { json: false })) => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_plan_list_with_json() {
+        let config = CliConfig::from_args(vec![
+            "PLAN".to_string(),
+            "list".to_string(),
+            "--json".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Plan(PlanCommand::List { json: true })) => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_plan_get() {
+        let config = CliConfig::from_args(vec![
+            "PLAN".to_string(),
+            "get".to_string(),
+            "plan_abc123".to_string(),
+        ])
+        .expect("valid");
+
+        match config.command {
+            Some(Command::Plan(PlanCommand::Get { plan_id })) => {
+                assert_eq!(plan_id, "plan_abc123");
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_get_requires_plan_id() {
+        let result = CliConfig::from_args(vec!["PLAN".to_string(), "get".to_string()]);
+        match result {
+            Err(msg) => assert!(msg.contains("requires a plan-id")),
+            Ok(_) => panic!("Expected error but got Ok"),
+        }
+    }
+
+    #[test]
+    fn plan_get_rejects_extra_args() {
+        let result = CliConfig::from_args(vec![
+            "PLAN".to_string(),
+            "get".to_string(),
+            "plan_abc123".to_string(),
+            "extra".to_string(),
+        ]);
+        match result {
+            Err(msg) => assert!(msg.contains("unexpected argument after `PLAN get")),
             Ok(_) => panic!("Expected error but got Ok"),
         }
     }

@@ -82,10 +82,15 @@ All commands support single-letter shortcuts shown in brackets:
 
 For scripted workflows, use the traditional `PLAN` subcommands:
 
+**Building Plans:**
 1. `PLAN new` — start/reset the persisted plan buffer (defaults to `$TMPDIR/agx-plan.json`, override with `AGX_PLAN_PATH`).
 2. `PLAN add "<instruction>"` — capture a natural-language instruction, read STDIN when piped, run the configured planner backend, and append the generated steps to the buffer.
 3. `PLAN preview` — pretty-print the current JSON plan so it can be inspected before queueing.
 4. `PLAN submit [--json]` — validate the plan and send it to AGQ. Returns the plan-id needed for ACTION submit.
+
+**Viewing Plans in AGQ:**
+5. `PLAN list [--json]` — list all stored plans from AGQ.
+6. `PLAN get <plan-id>` — view details of a specific plan.
 
 `PLAN add` can be run multiple times to iteratively build a workflow. Structured logs (`--debug`) show the instruction, input summary, tool registry snapshot, and the raw planner JSON to keep the pipeline auditable.
 
@@ -108,6 +113,39 @@ For machine-readable output, use `--json`:
 ```bash
 $ agx PLAN submit --json
 {"plan_id":"plan_abc123def456","job_id":"job_xyz789","task_count":5,"status":"submitted"}
+```
+
+### PLAN list and get
+
+After submitting plans to AGQ, you can view and retrieve them:
+
+**List all stored plans:**
+```bash
+$ agx PLAN list
+PLANS (3):
+  plan_abc123def456 | 5 tasks | Process log files | 2025-01-19 14:30
+  plan_def456ghi789 | 3 tasks | Backup database | 2025-01-19 14:25
+  plan_ghi789jkl012 | 2 tasks | (no description) | 2025-01-19 14:20
+```
+
+**Machine-readable format:**
+```bash
+$ agx PLAN list --json
+{"plans":[{"plan_id":"plan_abc123def456","description":"Process log files","task_count":5,"created_at":"2025-01-19 14:30"},...]}
+```
+
+**Get specific plan details:**
+```bash
+$ agx PLAN get plan_abc123def456
+{
+  "plan_id": "plan_abc123def456",
+  "plan": {
+    "tasks": [
+      {"task_number": 1, "command": "grep", "args": ["ERROR", "app.log"]},
+      {"task_number": 2, "command": "wc", "args": ["-l"]}
+    ]
+  }
+}
 ```
 
 ## CI/CD and Contribution Guide
