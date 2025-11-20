@@ -619,10 +619,25 @@ impl Repl {
 
         // Submit to AGQ
         let config = AgqConfig::from_env();
+        let agq_addr = config.addr.clone(); // Store for error messages
         let client = AgqClient::new(config);
 
         match client.submit_plan(&job_json) {
-            Ok(_) => {
+            Ok(submission) => {
+                // Save submission metadata (AGX-075)
+                let metadata = crate::plan_buffer::PlanMetadata {
+                    job_id: submission.job_id.clone(),
+                    submitted_at: chrono::DateTime::<chrono::Utc>::from(
+                        submission.submitted_at,
+                    )
+                    .to_rfc3339(),
+                };
+
+                // Non-fatal: warn but don't fail the submission
+                if let Err(e) = self.plan_storage.save_submission_metadata(&metadata) {
+                    eprintln!("⚠️  Warning: Failed to save submission metadata: {}", e);
+                }
+
                 println!("✅ Plan submitted successfully");
                 println!("   Plan ID: {}", plan_id);
                 println!("   Tasks: {}", task_count);
@@ -631,7 +646,23 @@ impl Repl {
                 println!("         (optional: --input '{{...}}' or --inputs-file <path>)");
                 Ok(())
             }
-            Err(e) => Err(format!("failed to submit plan: {}", e)),
+            Err(e) => {
+                // Provide helpful context for connection errors
+                if e.contains("connect error") {
+                    Err(format!(
+                        "Failed to connect to AGQ at {}\n\
+                         Error: {}\n\
+                         \n\
+                         Troubleshooting:\n\
+                         - Ensure AGQ is running\n\
+                         - Check AGQ_ADDR environment variable (current: {})\n\
+                         - Verify network connectivity",
+                        agq_addr, e, agq_addr
+                    ))
+                } else {
+                    Err(format!("failed to submit plan: {}", e))
+                }
+            }
         }
     }
 
@@ -1194,5 +1225,53 @@ mod tests {
         let result = ReplCommand::parse("action");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("requires plan-id"));
+    }
+
+    // Submit command tests (AGX-075)
+    #[test]
+    fn submit_rejects_empty_plan() {
+        // Create a REPL with empty plan
+        use crate::planner::backend::ModelBackend;
+        use crate::planner::types::{GeneratedPlan, ModelError, PlanContext};
+        use async_trait::async_trait;
+
+        // Mock backend for testing
+        struct MockBackend;
+        #[async_trait]
+        impl ModelBackend for MockBackend {
+            async fn generate_plan(
+                &self,
+                _instruction: &str,
+                _ctx: &PlanContext,
+            ) -> Result<GeneratedPlan, ModelError> {
+                unreachable!("generate_plan should not be called in this test")
+            }
+
+            fn backend_type(&self) -> &'static str {
+                "mock"
+            }
+
+            fn model_name(&self) -> &str {
+                "mock-model"
+            }
+
+            async fn health_check(&self) -> Result<(), ModelError> {
+                Ok(())
+            }
+        }
+
+        let backend = Box::new(MockBackend);
+        let mut repl = Repl::new(backend).unwrap();
+
+        // Clear any persisted plan to ensure empty state
+        repl.state.plan.tasks.clear();
+
+        // Ensure plan is now empty
+        assert!(repl.state.plan.tasks.is_empty());
+
+        // Try to submit - should fail with empty plan error
+        let result = repl.cmd_submit();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("plan is empty"));
     }
 }

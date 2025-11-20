@@ -281,6 +281,7 @@ agx (2)> s
    Tasks: 2
 
 Use with: agx ACTION submit --plan-id plan_abc123def456
+         (optional: --input '{...}' or --inputs-file <path>)
 
 agx (2)> plan list
 Plans (2):
