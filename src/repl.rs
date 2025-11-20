@@ -598,15 +598,41 @@ impl Repl {
 
     /// Submit plan to AGQ
     fn cmd_submit(&self) -> Result<(), String> {
+        use crate::agq_client::{AgqClient, AgqConfig};
+        use crate::build_job_envelope;
+
         if self.state.plan.tasks.is_empty() {
             return Err("plan is empty, nothing to submit".to_string());
         }
 
         println!("📤 Submitting plan to AGQ...");
-        println!("⚠️  Submit via REPL not yet fully integrated");
-        println!("   Use 'agx PLAN submit' for now");
 
-        Ok(())
+        // Build job envelope from current plan
+        let job = build_job_envelope(self.state.plan.clone())
+            .map_err(|e| format!("failed to build job envelope: {}", e))?;
+
+        let plan_id = job.plan_id.clone();
+        let task_count = job.tasks.len();
+
+        let job_json = serde_json::to_string(&job)
+            .map_err(|e| format!("failed to serialize job: {}", e))?;
+
+        // Submit to AGQ
+        let config = AgqConfig::from_env();
+        let client = AgqClient::new(config);
+
+        match client.submit_plan(&job_json) {
+            Ok(_) => {
+                println!("✅ Plan submitted successfully");
+                println!("   Plan ID: {}", plan_id);
+                println!("   Tasks: {}", task_count);
+                println!();
+                println!("Use with: agx ACTION submit --plan-id {}", plan_id);
+                println!("         (optional: --input '{{...}}' or --inputs-file <path>)");
+                Ok(())
+            }
+            Err(e) => Err(format!("failed to submit plan: {}", e)),
+        }
     }
 
     /// List jobs from AGQ (AGX-058)

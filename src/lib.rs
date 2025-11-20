@@ -412,7 +412,7 @@ fn run_delta_validation(
     Ok(validated_plan)
 }
 
-fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, String> {
+pub fn build_job_envelope(plan: plan::WorkflowPlan) -> Result<job::JobEnvelope, String> {
     let job_id = uuid::Uuid::new_v4().to_string();
     let plan_id = uuid::Uuid::new_v4().to_string();
     let plan_description = std::env::var("AGX_PLAN_DESCRIPTION").ok();
