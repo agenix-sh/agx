@@ -58,7 +58,7 @@ All commands support single-letter shortcuts shown in brackets:
 
 **Plan Actions:**
 - `[v]alidate` — Run Delta model validation (coming in AGX-045/046)
-- `[s]ubmit` — Submit plan to AGQ (use `agx PLAN submit` for now)
+- `[s]ubmit` — Submit plan to AGQ and get plan-id
 - `save` — Manually save session
 
 **Plan Operations:**
@@ -273,6 +273,15 @@ Queue Statistics:
   active_jobs: 1
   completed_jobs: 15
   workers: 2
+
+agx (2)> s
+📤 Submitting plan to AGQ...
+✅ Plan submitted successfully
+   Plan ID: plan_abc123def456
+   Tasks: 2
+
+Use with: agx ACTION submit --plan-id plan_abc123def456
+         (optional: --input '{...}' or --inputs-file <path>)
 
 agx (2)> plan list
 Plans (2):
